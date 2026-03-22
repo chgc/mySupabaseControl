@@ -7,7 +7,7 @@
 
 ## 狀態
 
-design_complete（第一輪審查修訂完成）
+design_complete（第二輪審查修訂完成）
 
 ## Phase
 
@@ -57,7 +57,7 @@ type ProjectModel struct {
     // 格式：小寫英數字與連字號，3–40 字元，不可以連字號開頭或結尾。
     Slug string
 
-    // DisplayName 是專案的人類可讀名稱（不可為空，最長 100 字元）。
+    // DisplayName 是專案的人類可讀名稱（不可為空或純空白，trim 後最長 100 個 Unicode 字元 / rune）。
     DisplayName string
 
     // Status 是專案的當前狀態。
@@ -142,6 +142,7 @@ const (
 | `stopping` | `error` | 停止逾時 | — |
 | `error` | `creating` | RetryCreate | `PreviousStatus == creating` |
 | `error` | `starting` | RetryStart | `PreviousStatus ∈ {starting, running, stopping}` |
+| `error` | `error` | 二次崩潰（更新 LastError）| 僅更新 `LastError` 與 `UpdatedAt`，不修改 `PreviousStatus` |
 | `error` | `destroyed` | 強制 Destroy | — |
 
 > **說明：** 進入 `error` 狀態時，`TransitionTo` 會自動將目前 `Status` 寫入 `PreviousStatus`，
@@ -150,7 +151,7 @@ const (
 ```go
 // ValidTransition 檢查從 from 到 to 的狀態轉換是否合法。
 // 注意：error 的恢復路徑（error → creating / error → starting）需額外傳入 previousStatus。
-// 對非 error 起始狀態，previousStatus 忽略不計。
+// 對非 error recovery 路徑（即 from != StatusError）的轉換，previousStatus 忽略不計。
 func ValidTransition(from, to ProjectStatus, previousStatus ProjectStatus) bool
 
 // TransitionError 在嘗試不合法的狀態轉換時回傳。
@@ -191,7 +192,7 @@ func ValidateSlug(slug string) error
 //  6. 截斷至 40 字元（截斷後若結尾為連字號，繼續移除）
 //
 // 若正規化後長度 < 3，回傳 ErrCannotNormalize。
-// 正規化成功後不再重複呼叫 ValidateSlug；呼叫端如需驗證保留名稱，需自行呼叫 ValidateSlug。
+// NormalizeSlug 不驗證保留名稱。若後續不透過 NewProject 使用結果，呼叫端須自行呼叫 ValidateSlug。
 func NormalizeSlug(input string) (string, error)
 
 // IsReservedSlug 回傳 slug 是否為系統保留名稱。
@@ -219,7 +220,7 @@ type ProjectHealth struct {
 
 // IsHealthy 回傳是否所有服務都處於 healthy 狀態。
 // 為衍生計算方法，不儲存欄位，確保與 Services map 的一致性。
-// Services 為空時回傳 false。
+// h == nil 或 Services 為空時回傳 false。
 func (h *ProjectHealth) IsHealthy() bool
 
 // ServiceName 是 Supabase 服務的識別名稱。
@@ -287,18 +288,21 @@ var (
 ```go
 // NewProject 建立一個新的 ProjectModel，狀態為 creating。
 // 驗證 slug（含保留名稱）與 displayName，並以 time.Now().UTC() 設定時間戳記。
+// displayName 在 trim 後進行驗證（不可為空，最長 100 個 Unicode 字元）。
 // 錯誤：ErrInvalidSlug、ErrReservedSlug、ErrInvalidDisplayName
 func NewProject(slug, displayName string) (*ProjectModel, error)
 
 // TransitionTo 嘗試將專案狀態轉換至 target。
-// 成功時修改 receiver 的 Status、PreviousStatus、UpdatedAt 欄位。
-// 若轉入 error，同時將 lastError 寫入 LastError（由呼叫端傳入）。
+// 成功時修改 Status 與 UpdatedAt；若目標為 StatusError，同時將當前 Status 寫入 PreviousStatus。
+// 若 target == StatusError，應優先使用 SetError 以確保 LastError 同步更新。
+// 直接呼叫 TransitionTo(StatusError) 仍為合法，但 LastError 不會被更新。
 // 若轉換不合法，回傳 *TransitionError（可用 errors.Is(err, ErrInvalidTransition) 或
 // errors.As(err, &te) 取得細節）。
 func (p *ProjectModel) TransitionTo(target ProjectStatus) error
 
-// SetError 將專案轉入 error 狀態並記錄錯誤訊息。
-// 等同於 TransitionTo(StatusError) + 設定 LastError。
+// SetError 將專案轉入 error 狀態並記錄錯誤訊息（SetError 是進入 error 狀態的正規路徑）。
+// 若當前狀態已是 error（e.g. 二次崩潰），則僅更新 LastError 與 UpdatedAt，不修改 PreviousStatus。
+// 從 error 恢復後，LastError 保留原值，不自動清空。
 func (p *ProjectModel) SetError(reason string) error
 
 // IsTerminal 回傳此專案是否處於終端狀態（destroyed）。
@@ -312,20 +316,23 @@ func (p *ProjectModel) CanStop() bool
 
 // CanDestroy 回傳此專案是否可以銷毀（stopped 或 error）。
 func (p *ProjectModel) CanDestroy() bool
+
+// CanRetryCreate 回傳此專案是否可以重試建立（error 且 PreviousStatus == creating）。
+func (p *ProjectModel) CanRetryCreate() bool
 ```
 
 **各狀態輔助方法回傳值：**
 
-| Status | `CanStart()` | `CanStop()` | `CanDestroy()` | `IsTerminal()` |
-|--------|-------------|------------|---------------|---------------|
-| `creating` | false | false | false | false |
-| `stopped` | true | false | true | false |
-| `starting` | false | false | false | false |
-| `running` | false | true | false | false |
-| `stopping` | false | false | false | false |
-| `error` (from creating) | false | false | true | false |
-| `error` (from starting/running/stopping) | true | false | true | false |
-| `destroyed` | false | false | false | true |
+| Status | `CanStart()` | `CanStop()` | `CanDestroy()` | `CanRetryCreate()` | `IsTerminal()` |
+|--------|-------------|------------|---------------|-------------------|---------------|
+| `creating` | false | false | false | false | false |
+| `stopped` | true | false | true | false | false |
+| `starting` | false | false | false | false | false |
+| `running` | false | true | false | false | false |
+| `stopping` | false | false | false | false | false |
+| `error` (PreviousStatus == creating) | false | false | true | true | false |
+| `error` (PreviousStatus ∈ {starting/running/stopping}) | true | false | true | false | false |
+| `destroyed` | false | false | false | false | true |
 
 ---
 
@@ -342,9 +349,9 @@ func (p *ProjectModel) CanDestroy() bool
 
 ### 狀態轉換
 
-1. 呼叫 `project.TransitionTo(target)`
-2. 查詢狀態機轉換表，若不合法回傳 `TransitionError`
-3. 若合法，更新 `Status` 與 `UpdatedAt`
+1. 呼叫 `project.TransitionTo(target)` 或 `project.SetError(reason)`
+2. 查詢狀態機轉換表，若不合法回傳 `*TransitionError`
+3. 若合法，更新 `Status` 與 `UpdatedAt`；若目標為 `error`，同時將當前 `Status` 寫入 `PreviousStatus`
 4. 持久化至 state store
 
 ---
@@ -355,7 +362,7 @@ func (p *ProjectModel) CanDestroy() bool
 |------|---------|---------|
 | Slug 格式不合法 | 回傳 `ErrInvalidSlug` + 具體原因 | `{ "error": "invalid_slug", "message": "slug must be 3-40 chars..." }` |
 | Slug 為保留名稱 | 回傳 `ErrReservedSlug` | `{ "error": "reserved_slug", "message": "..." }` |
-| DisplayName 為空或超過 100 字元 | 回傳 `ErrInvalidDisplayName` | `{ "error": "invalid_display_name", "message": "..." }` |
+| DisplayName 為空/純空白/超過 100 rune | 回傳 `ErrInvalidDisplayName` | `{ "error": "invalid_display_name", "message": "..." }` |
 | 專案已存在 | 回傳 `ErrProjectAlreadyExists` | `{ "error": "project_exists", "message": "..." }` |
 | 不合法的狀態轉換 | 回傳 `*TransitionError`（包裝 `ErrInvalidTransition`） | `{ "error": "invalid_transition", "from": "...", "to": "..." }` |
 | NormalizeSlug 結果過短 | 回傳 `ErrCannotNormalize` | `{ "error": "cannot_normalize", "message": "..." }` |
@@ -368,12 +375,12 @@ func (p *ProjectModel) CanDestroy() bool
 
 - Slug 驗證：合法 slug、太短（2 字元）、太長（41 字元）、非法字元（含 `.`/`/`/`\`）、連字號開頭/結尾、連續連字號、保留名稱
 - Slug 正規化：空格轉換、大寫轉小寫、非法字元移除、連續連字號合併、截斷後結尾連字號移除、正規化後過短（回傳 `ErrCannotNormalize`）、全部非法字元輸入
-- 狀態機轉換：所有合法轉換（含 `error → creating` 與 `error → starting` 的 `PreviousStatus` 條件）、所有不合法轉換
+- 狀態機轉換：所有合法轉換（含 `error → creating` 與 `error → starting` 的 `PreviousStatus` 條件，以及 `error → error` 二次崩潰）、所有不合法轉換
 - `TransitionError` error 語意：`errors.Is(err, ErrInvalidTransition)` 為 true；`errors.As(err, &te)` 能取得 `From`/`To`；`Error()` 字串格式
-- `SetError`：狀態轉為 `error`、`PreviousStatus` 寫入正確、`LastError` 記錄訊息
-- `NewProject`：正常建立（`Status == creating`、時間戳由函式設定）、空 slug、空 displayName、displayName 超過 100 字元
-- `CanStart/CanStop/CanDestroy/IsTerminal`：各 status 的回傳值（見介面合約表格）
-- `ProjectHealth.IsHealthy()`：全部 healthy 回傳 true、任一 unhealthy 回傳 false、Services 為空回傳 false
+- `SetError`：狀態轉為 `error`、`PreviousStatus` 寫入正確、`LastError` 記錄訊息；已在 error 時僅更新 `LastError` 不更動 `PreviousStatus`
+- `NewProject`：正常建立（`Status == creating`、時間戳由函式設定）、空 slug、空 displayName（含純空白）、displayName trim 後超過 100 rune
+- `CanStart/CanStop/CanDestroy/CanRetryCreate/IsTerminal`：各 status 的回傳值（見介面合約表格）
+- `ProjectHealth.IsHealthy()`：全部 healthy 回傳 true、任一 unhealthy 回傳 false、Services 為空回傳 false、**h == nil 回傳 false**
 - `AllServices()`：回傳恰好 13 個服務，且順序固定
 
 ### 測試類型分配
@@ -384,7 +391,7 @@ func (p *ProjectModel) CanDestroy() bool
 | 單元測試（table-driven）| 狀態機轉換（含 PreviousStatus 條件）| domain |
 | 單元測試 | TransitionError error 語意（Is/As/Error()）| domain |
 | 單元測試 | NewProject 建構（含 displayName 驗證）| domain |
-| 單元測試（table-driven）| CanStart/CanStop/CanDestroy/IsTerminal 各狀態 | domain |
+| 單元測試（table-driven）| CanStart/CanStop/CanDestroy/CanRetryCreate/IsTerminal 各狀態 | domain |
 | 單元測試 | ProjectHealth.IsHealthy() | domain |
 | 單元測試 | AllServices() 完整性與順序 | domain |
 
@@ -412,7 +419,7 @@ func (p *ProjectModel) CanDestroy() bool
 
 ### 輸入驗證
 - Slug：regex `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`，長度 3–40，禁止連續連字號，`ValidateSlug` 包含保留名稱檢查
-- DisplayName：不可為空，最長 100 字元，驗證於 `NewProject` 內部執行
+- DisplayName：trim 後不可為空，最長 100 個 Unicode 字元（rune），驗證於 `NewProject` 內部執行
 
 ### 安全性
 - Slug 驗證防止路徑穿越攻擊（regex 只允許 `[a-z0-9-]`，禁止 `.`、`/`、`\` 等字元）
@@ -439,34 +446,26 @@ func (p *ProjectModel) CanDestroy() bool
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪，2025-07-14）
-- **意見（摘要）：**
-  1. 🔴 **[已修正]** `TransitionError` 宣稱支援 `errors.Is` 語意錯誤 → 加入 `Unwrap()` / `Error()` 合約，改為 `errors.As` + `Unwrap` 兩用設計
-  2. 🔴 **[已修正]** `error` 恢復路徑需要外部知識 → 加入 `PreviousStatus` 欄位，更新狀態機轉換規則
-  3. 🔴 **[已修正]** `ProjectModel` 缺少 `LastError` 欄位，與 state-store schema 矛盾 → 加入欄位
-  4. 🟡 **[已修正]** `ReservedSlugs` 為 exported mutable var → 改為 unexported + `IsReservedSlug()`
-  5. 🟡 **[已修正]** `DisplayName` 驗證未出現在主合約 → 加入 `NewProject` 合約與 error table
-  6. 🟡 **[已修正]** `NormalizeSlug` 邊界未定義 → 補充完整正規化步驟與邊界行為
-  7. 🟡 **[已修正]** `OverallHealthy` 儲存欄位可能不一致 → 改為 `IsHealthy()` 衍生方法
-  8. 🟡 **[已修正]** `ErrInvalidTransition` 與 `TransitionError` 關係不明 → 明確說明包裝關係
-  9. 🟡 **[已修正]** `ValidateSlug` 保留名稱語意矛盾 → 明確說明 `ValidateSlug` 包含保留名稱檢查，移除多餘步驟
-  10. 🟡 **[已修正]** 測試策略補充 → 加入 DisplayName、errors.As/Is、IsHealthy 等案例
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪，2025-07-14）
+- **第一輪意見（摘要）：** 3 個阻斷性問題（TransitionError 語意、PreviousStatus 欄位缺失、LastError 欄位缺失）+ 7 個建議修正，全部已解決。
+- **第二輪意見（摘要）：**
+  1. 🔴 **[已修正]** `IsHealthy()` nil receiver 未處理 → 合約加入「h == nil → false」，測試策略補充案例
+  2. 🔴 **[已修正]** 缺少 `CanRetryCreate()` helper，破壞封裝 → 加入方法、更新狀態表格與測試策略
+  3. 🟡 **[已修正]** `SetError` 在已為 error 狀態時行為未定義 → 合約明確說明二次崩潰行為
+  4. 🟡 **[已修正]** `DisplayName` 空白字元行為未定義 → 明確說明 trim 後驗證，100 rune 限制
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪，2025-07-14）
-- **意見（摘要）：**
-  1. 🔴 **[已修正]** `error → creating` / `error → starting` 無法執行（缺 error origin）→ 加入 `PreviousStatus` 欄位與對應轉換條件
-  2. 🔴 **[已修正]** `ProjectModel` 缺少 `LastError` 欄位，與 state-store 不一致 → 加入欄位
-  3. 🔴 **[已修正]** `TransitionError.Unwrap()` 未說明，`errors.Is` 合約不完整 → 加入 `Unwrap()` / `Error()` 合約說明
-  4. 🟡 **[已修正]** `DisplayName` 驗證散落 Production Ready → 移入 `NewProject` 合約
-  5. 🟡 **[已修正]** `NormalizeSlug` 邊界（normalize 後過短、結尾 hyphen）→ 補充完整步驟
-  6. 🟡 **[已修正]** `CanStart/Stop/Destroy/IsTerminal` 缺狀態-回傳值表格 → 加入完整表格
-  7. 🟡 **[已修正]** `ProjectHealth.OverallHealthy` 計算規則未定義 → 改為 `IsHealthy()` 方法
-  8. 🟡 **[已修正]** `ReservedSlugs` exported mutable → 改為 unexported
-  9. 🟡 **[已修正]** `GlobalHealth.Services` key 型別 → 待 runtime-adapter.md 同步修正
-  10. 🟡 **[已修正]** 測試策略補充缺失案例 → 已補充
-  11. 🟡 **[已修正]** Logging 應由呼叫端負責 → Production Ready 節已明確說明
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪，2025-07-14）
+- **第一輪意見（摘要）：** 3 個阻斷性問題，全部已解決。
+- **第二輪意見（摘要）：**
+  1. 🔴 **[已修正]** `TransitionTo` 注解矛盾（「lastError 由呼叫端傳入」與簽名不符）→ 移除矛盾注解，改為說明 SetError 為正規路徑
+  2. 🟡 **[已修正]** `SetError` 與 `TransitionTo(StatusError)` 邊界 → 明確說明兩者差異及 LastError 行為
+  3. 🟡 **[已修正]** `error → error` 二次崩潰未定義 → 加入狀態機表格，`SetError` 合約補充
+  4. 🟡 **[已修正]** `DisplayName` 100 字元 byte vs rune → 明確改為 100 rune
+  5. 🔵 **[已修正]** 執行流程缺 PreviousStatus 更新說明 → 補充至 Step 3
+  6. 🔵 **[已修正]** `TransitionTo` 注解暗示 PreviousStatus 每次更新 → 修正措辭
+  7. 🔵 **[已修正]** error 恢復後 LastError 是否清空 → 明確說明保留原值
 
 ---
 
