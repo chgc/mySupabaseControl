@@ -498,7 +498,7 @@ func (p *ProjectModel) CanRetryCreate() bool
 | `domain-project-status` | `project_status.go` | `ProjectStatus` type + 8 個常數（creating, stopped, starting, running, stopping, destroying, destroyed, error） | ✅ done |
 | `domain-project-health` | `project_health.go` | `ServiceStatus`（5 個常數）、`ServiceHealth` struct、`ProjectHealth` struct、`IsHealthy() bool`、`AllServices() []ServiceName` | ✅ done |
 | `domain-project-model` | `project_model.go` | `ProjectModel` struct、`NewProject()`、`TransitionTo()`、`SetError()`、`ValidateSlug()`、`NormalizeSlug()`、`IsReservedSlug()`、`TransitionError`、`ValidTransition()` | ✅ done |
-| `test-project-model` | `project_model_test.go` | Table-driven 測試：`TransitionTo()` 合法/非法轉換、`SetError()` 語意、`ValidateSlug()` 邊界、`IsHealthy()` nil/空 map | [ ] pending |
+| `test-project-model` | `project_model_test.go` | Table-driven 測試：`TransitionTo()` 合法/非法轉換、`SetError()` 語意、`ValidateSlug()` 邊界、`IsHealthy()` nil/空 map | ✅ done |
 
 ---
 

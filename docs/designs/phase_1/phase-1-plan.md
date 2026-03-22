@@ -137,7 +137,7 @@ Phase 1 完成後，系統應具備：
 
 | 任務 ID | 說明 | 狀態 |
 |---------|------|------|
-| `test-project-model` | `TransitionTo()`、`ValidateSlug()`、`IsHealthy()` 單元測試 | [ ] pending |
+| `test-project-model` | `TransitionTo()`、`ValidateSlug()`、`IsHealthy()` 單元測試 | ✅ done |
 | `test-config-schema` | `ConfigSchema()` 完整性（94 個 key、無重複、分類驗證） | [ ] pending |
 | `test-project-config` | `ResolveConfig()` 優先順序、`ExtractPortSet()` 邊界 | [ ] pending |
 | `test-secret-gen` | hex/alphanumeric 格式、JWT 格式 | [ ] pending |
