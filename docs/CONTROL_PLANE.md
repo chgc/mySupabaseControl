@@ -93,6 +93,61 @@ Runtime Adapter 必須抽象化上述所有差異。
 > 每個 Phase 開始前，須依 `docs/designs/_PHASE_TEMPLATE.md` 產出對應的 Phase Plan 文件，
 > 將下方高階描述拆解為具體功能清單與依賴關係。詳見 `docs/REVIEW_GATEWAY.md`「前置階段 — Phase 規劃」。
 
+### Phase 0 — High-Level Design Discussion
+
+> **Phase Plan：** `docs/designs/phase-0-plan.md`
+
+本階段為研究與討論階段，產出為分析文件而非程式碼。目標是在定義 Control Plane 模型之前，深入理解 Supabase 的架構設計，並探討多專案部署下的元件共用可能性。
+
+**研究主題 1：Supabase 原始架構設計分析**
+
+盤點 `docker-compose.yml` 中所有服務並分析其架構角色與相互關係：
+
+| 服務 | 角色 | 關鍵依賴 | 狀態性 |
+|------|------|---------|--------|
+| db（PostgreSQL） | 核心資料庫 | 無 | Stateful |
+| auth（GoTrue） | 認證服務 | db | Stateful（透過 db） |
+| rest（PostgREST） | RESTful API 自動產生 | db | Stateless |
+| realtime | 即時訂閱與廣播 | db | Stateful（連線狀態） |
+| storage | 檔案儲存 API | db, rest, imgproxy | Stateful（檔案系統） |
+| imgproxy | 圖片轉換 | 無 | Stateless |
+| meta（postgres-meta） | Postgres metadata API | db | Stateless |
+| functions（Edge Runtime） | Edge Functions 執行環境 | kong | Stateless |
+| kong | API Gateway | 所有後端服務 | Stateless |
+| studio | Web 管理介面 | meta, analytics, kong | Stateless |
+| analytics（Logflare） | 日誌分析 | db | Stateful（透過 db） |
+| vector | 日誌收集與轉發 | docker socket, analytics | Stateless |
+| supavisor | 連線池管理 | db | Stateful（連線池狀態） |
+
+需分析的面向：
+- 各服務間的資料流與通訊方式（HTTP 內部呼叫、DB 連線、WebSocket）
+- 各服務與 DB 的耦合程度（使用的 DB user、schema、是否可指向不同 DB）
+- 各服務的設定隔離需求（JWT secret、port、對外 URL）
+- 各服務的資源消耗特徵（記憶體、CPU、啟動時間）
+
+**研究主題 2：多專案共用元件分析**
+
+基於主題 1 的分析結果，識別在多專案部署下可以共用的元件，以減少每個專案的資源開銷：
+
+- **初步假設 — 可能可共用：** studio、kong、imgproxy、vector、analytics
+- **初步假設 — 必須每專案獨立：** db、auth、rest、realtime、storage、functions、meta、supavisor
+
+需驗證的關鍵問題：
+- Studio 是否具備管理多個 Supabase 實例的能力？若否，是否可透過設定實現？
+- Kong 能否作為統一 API Gateway，將請求路由到不同專案的後端服務？
+- 共用元件的 multi-tenant 設定如何處理？
+- 共用部署 vs 完全獨立部署的資源消耗對比
+
+**研究主題 3：調整現有 High-Level Plan**
+
+若主題 2 的結論支持元件共用方案：
+- 更新核心架構圖：引入「共用基礎層」與「每專案隔離層」的分層概念
+- 重新評估 Runtime Adapter 介面：是否需要區分「部署共用服務」與「部署專案服務」兩類操作
+- 調整設定 Schema 範圍：區分「全域共用設定」與「每專案設定」
+- 審視 Phase 1–5 的 deliverables 是否需要對應調整
+
+Phase 0 的結論將作為 Phase 1 的進入條件。
+
 ### Phase 1 — 定義 Runtime 無關的 Control Plane 模型
 
 > **Phase Plan：** `docs/designs/phase-1-plan.md`（待建立）
