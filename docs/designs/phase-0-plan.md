@@ -33,9 +33,9 @@ Phase 0 完成後，應產出：
 
 | # | 功能名稱 | 設計文件路徑 | 狀態 | 說明 |
 |---|----------|-------------|------|------|
-| 1 | Supabase 架構分析 | `docs/designs/supabase-arch-analysis.md` | 未開始 | 盤點 docker-compose.yml 中 13 個服務的角色、依賴、資料流、狀態性與設定隔離需求 |
-| 2 | 多專案共用元件分析 | `docs/designs/shared-component-analysis.md` | 未開始 | 基於功能 1 的分析，識別可共用元件，驗證共用可行性，評估資源節省與複雜度取捨 |
-| 3 | High-Level Plan 調整 | `docs/designs/plan-adjustment.md` | 未開始 | 基於功能 2 的結論，決定是否調整架構圖、Runtime Adapter 介面、設定 Schema 與 Phase 1–5 內容 |
+| 1 | Supabase 架構分析 | `docs/designs/supabase-arch-analysis.md` | ✅ 完成 | 盤點 docker-compose.yml 中 13 個服務的角色、依賴、資料流、狀態性與設定隔離需求 |
+| 2 | 多專案共用元件分析 | `docs/designs/shared-component-analysis.md` | ✅ 完成 | 基於功能 1 的分析，識別可共用元件，驗證共用可行性，評估資源節省與複雜度取捨 |
+| 3 | High-Level Plan 調整 | `docs/designs/plan-adjustment.md` | ✅ 完成 | 基於功能 2 的結論，決定是否調整架構圖、Runtime Adapter 介面、設定 Schema 與 Phase 1–5 內容 |
 
 > **注意：** Phase 0 的產出為分析文件，不適用標準的設計文件範本（`_TEMPLATE.md`）。
 > 各功能的文件格式可依研究主題自行定義，但須包含：分析方法、發現、結論與建議。
