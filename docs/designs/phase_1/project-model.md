@@ -7,7 +7,7 @@
 
 ## 狀態
 
-design_complete（第三輪審查修訂完成）
+approved（四輪審查通過）
 
 ## Phase
 
@@ -75,7 +75,7 @@ type ProjectModel struct {
     // CreatedAt 是專案建立時間，由 NewProject 呼叫 time.Now().UTC() 設定。
     CreatedAt time.Time
 
-    // UpdatedAt 是專案最後更新時間，由 TransitionTo 更新。
+    // UpdatedAt 是專案最後更新時間，由 TransitionTo 或 SetError 更新。
     UpdatedAt time.Time
 
     // Health 是專案的服務健康資訊，由 runtime adapter 填入。
@@ -142,16 +142,16 @@ const (
 | `stopping` | `error` | 停止逾時 | — |
 | `error` | `creating` | RetryCreate | `PreviousStatus == creating` |
 | `error` | `starting` | RetryStart | `PreviousStatus ∈ {starting, running, stopping}` |
-| `error` | `error` | 二次崩潰（更新 LastError）| 僅更新 `LastError` 與 `UpdatedAt`，不修改 `PreviousStatus` |
+| `error` | `error` | 二次崩潰；正規路徑應透過 `SetError`（`LastError` 才會更新）| 僅更新 `LastError` 與 `UpdatedAt`，不修改 `PreviousStatus` |
 | `error` | `destroyed` | 強制 Destroy | — |
 
-> **說明：** 進入 `error` 狀態時，`TransitionTo` 會自動將目前 `Status` 寫入 `PreviousStatus`，
-> 以供後續恢復路徑判斷。
+> **說明：** 從**非 error 狀態**首次進入 `error` 時，`TransitionTo` 會自動將目前 `Status` 寫入 `PreviousStatus`，
+> 以供後續恢復路徑判斷（`error → error` 路徑不覆寫 `PreviousStatus`）。
 
 ```go
 // ValidTransition 檢查從 from 到 to 的狀態轉換是否合法。
 // 注意：error 的恢復路徑（error → creating / error → starting）需額外傳入 previousStatus。
-// 對非 error recovery 路徑（即 from != StatusError）的轉換，previousStatus 忽略不計。
+// `previousStatus` 僅在 from==StatusError 且 to∈{creating, starting} 時作為判斷依據，其他情況忽略不計。
 func ValidTransition(from, to ProjectStatus, previousStatus ProjectStatus) bool
 
 // TransitionError 在嘗試不合法的狀態轉換時回傳。
@@ -354,7 +354,7 @@ func (p *ProjectModel) CanRetryCreate() bool
 
 1. 呼叫 `project.TransitionTo(target)` 或 `project.SetError(reason)`
 2. 查詢狀態機轉換表，若不合法回傳 `*TransitionError`
-3. 若合法，更新 `Status` 與 `UpdatedAt`；若目標為 `error` 且當前狀態不是 `error`，將當前 `Status` 寫入 `PreviousStatus`
+3. 若合法，更新 `Status` 與 `UpdatedAt`；若目標為 `error` 且當前狀態不是 `error`，將當前 `Status` 寫入 `PreviousStatus`；若呼叫方式為 `SetError`，另行更新 `LastError`
 4. 持久化至 state store
 
 ---
@@ -450,7 +450,7 @@ func (p *ProjectModel) CanRetryCreate() bool
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ ✅ APPROVED（第三輪）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ ✅ APPROVED（第三輪）→ ✅ APPROVED（第四輪）
 - **第一輪意見（摘要）：** 3 個阻斷性問題（TransitionError 語意、PreviousStatus 欄位缺失、LastError 欄位缺失）+ 7 個建議修正，全部已解決。
 - **第二輪意見（摘要）：**
   1. 🔴 **[已修正]** `IsHealthy()` nil receiver 未處理
@@ -462,10 +462,14 @@ func (p *ProjectModel) CanRetryCreate() bool
   - O1 **[已修正]**：soft delete 政策補充（`destroyed` slug 不可復用）
   - O2 **[已修正]**：`SetError` 失敗語意補充（不可進入 error 時回傳 `*TransitionError`）
   - O3–O5：低優先度建議，不阻擋進入實作。
+- **第四輪意見（摘要）：**
+  - 無阻斷性問題。PreviousStatus 條件、SetError 邊界、soft delete 政策均通過。
+  - 🟡 **[已修正]** 狀態機表格說明 note 未排除 error→error 情況 → 改為「從非 error 狀態首次進入」
+  - 🟡 **[已修正]** `error→error` 表格觸發動作說明 → 補充正規路徑應透過 `SetError`
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ 🔁 REVISE（第三輪）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ 🔁 REVISE（第三輪）→ ✅ APPROVED（第四輪）
 - **第一輪意見（摘要）：** 3 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
   1. 🔴 **[已修正]** `TransitionTo` 注解矛盾（「lastError 由呼叫端傳入」與簽名不符）
@@ -474,8 +478,13 @@ func (p *ProjectModel) CanRetryCreate() bool
   4. 🟡 **[已修正]** `DisplayName` 100 byte vs rune
   5–7. 🔵 **[已修正]** 執行流程與合約措辭細節
 - **第三輪意見（摘要）：**
-  1. 🔴 **[已修正]** `TransitionTo(StatusError)` 在已為 error 時會污染 `PreviousStatus` → `TransitionTo` 合約明確：「target==StatusError 且當前狀態已是 error 時，不更新 PreviousStatus」；執行流程 Step 3 同步修正
+  1. 🔴 **[已修正]** `TransitionTo(StatusError)` 在已為 error 時會污染 `PreviousStatus`
   2. 🟡 **[已修正]** 測試策略補充：`TransitionTo(StatusError) from error → PreviousStatus 不被覆寫`
+- **第四輪意見（摘要）：**
+  - 無阻斷性問題。三處 PreviousStatus 條件（godoc/表格/流程）完全一致。
+  - 🟡 **[已修正]** `UpdatedAt` godoc 未提及 `SetError` 也會更新
+  - 🟡 **[已修正]** `ValidTransition` godoc previousStatus 條件措辭歧義 → 精確為「from==StatusError 且 to∈{creating,starting} 時」
+  - 🔵 **[已修正]** 執行流程 Step 3 補充 `SetError` 更新 `LastError`
 
 ---
 
