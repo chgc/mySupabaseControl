@@ -88,7 +88,7 @@ type RuntimeAdapter interface {
     // Docker Compose：docker compose down -v + 刪除專案目錄
     // K8s：刪除 namespace（級聯刪除所有資源）
     //
-    // 前置條件：project.Status == stopped || error
+    // 前置條件：project.Status == stopped || destroying || error
     // 後置條件：成功時 project.Status → destroyed
     //           失敗時 project.Status → error
     Destroy(ctx context.Context, project *ProjectModel) error
@@ -101,13 +101,24 @@ type RuntimeAdapter interface {
     // 此方法不改變 project.Status，僅回傳當前快照。
     Status(ctx context.Context, project *ProjectModel) (*ProjectHealth, error)
 
-    // RenderConfig 將專案設定渲染為 runtime 特定的 artifacts。
+    // RenderConfig 將專案設定渲染為 runtime 特定的 artifacts，並回傳供檢查。
+    // 注意：此方法僅負責渲染（純計算），不寫入 runtime。
     //
-    // Docker Compose：渲染為 .env 檔案
-    // K8s：渲染為 ConfigMap + Secret YAML
+    // Docker Compose：渲染為 .env 格式 Artifact
+    // K8s：渲染為 ConfigMap + Secret YAML Artifact
     //
-    // 此方法通常在 Create 內部呼叫，但也可獨立呼叫（如更新設定）。
+    // 若需將設定套用至 runtime（如更新設定），應呼叫 ApplyConfig。
     RenderConfig(ctx context.Context, project *ProjectModel, config *ProjectConfig) ([]Artifact, error)
+
+    // ApplyConfig 將專案設定渲染並寫入 runtime。
+    // 等同於 RenderConfig + 將 artifacts 寫入 runtime 目標（檔案系統或 kubectl apply）。
+    //
+    // Docker Compose：覆寫 .env 檔案
+    // K8s：kubectl apply ConfigMap/Secret
+    //
+    // 此方法可在 Create 後獨立呼叫，用於更新設定（不需重新建立整個 runtime 環境）。
+    // 冪等：重複呼叫安全，結果相同。
+    ApplyConfig(ctx context.Context, project *ProjectModel, config *ProjectConfig) error
 }
 ```
 
@@ -118,11 +129,12 @@ type RuntimeAdapter interface {
 | `Create` | `creating` | `stopped` | `error` | ✅ 可重試 |
 | `Start` | `stopped` / `starting` | `running` | `error` | ✅ 可重試 |
 | `Stop` | `running` / `stopping` | `stopped` | `error` | ✅ 可重試 |
-| `Destroy` | `stopped` / `error` | `destroyed` | `error` | ✅ 可重試 |
+| `Destroy` | `stopped` / `destroying` / `error` | `destroyed` | `error` | ✅ 可重試 |
 | `Status` | 任何非 `destroyed` | 不變 | 不變 | ✅ 唯讀 |
 | `RenderConfig` | 任何 | 不變 | 不變 | ✅ 純計算 |
+| `ApplyConfig` | 任何 | 不變 | 不變 | ✅ 可重試 |
 
-> **冪等性要求：** 所有變更方法必須是冪等的。重複呼叫 `Create` 不應報錯（若已建立）；重複呼叫 `Start` 不應報錯（若已在運行）。這簡化了 error recovery 邏輯。
+> **冪等性說明：** 前置條件由呼叫端（ProjectService）負責驗證。Adapter 的冪等性意指：**runtime 操作層面**的冪等（如目錄已存在不報錯、服務已在運行不報錯），適用於 error recovery 重試場景。呼叫端不應在狀態不符前置條件時呼叫 Adapter 方法。
 
 ### Adapter 錯誤型別
 
@@ -130,7 +142,7 @@ type RuntimeAdapter interface {
 // AdapterError 表示 Runtime Adapter 操作失敗。
 // 包含操作名稱、專案 slug 與底層錯誤。
 type AdapterError struct {
-    Operation string        // "create", "start", "stop", "destroy", "status"
+    Operation string        // "create", "start", "stop", "destroy", "status", "apply_config"
     Slug      string        // 專案 slug
     Err       error         // 底層錯誤
 }
@@ -140,6 +152,23 @@ func (e *AdapterError) Error() string {
 }
 
 func (e *AdapterError) Unwrap() error {
+    return e.Err
+}
+
+// StartError 在 Start 方法因服務健康檢查失敗時回傳。
+// 攜帶失敗當下的服務健康快照，呼叫端可透過 errors.As 取得詳情，
+// 無需額外呼叫 Status。
+type StartError struct {
+    Slug   string        // 專案 slug
+    Health *ProjectHealth // 失敗當下的服務健康快照
+    Err    error          // 底層原因（通常為 ErrServiceNotHealthy 或 ErrAdapterTimeout）
+}
+
+func (e *StartError) Error() string {
+    return fmt.Sprintf("start failed for project %q: %v", e.Slug, e.Err)
+}
+
+func (e *StartError) Unwrap() error {
     return e.Err
 }
 
@@ -296,18 +325,18 @@ Control Plane                RuntimeAdapter              Docker/K8s
 ### Create
 
 1. 驗證 `project.Status == creating`
-2. 呼叫 `RenderConfig(ctx, project, config)` 產生 artifacts
+2. 呼叫 `ApplyConfig(ctx, project, config)` — 渲染並寫入 artifacts（.env 或 ConfigMap/Secret）
 3. 建立專案目錄（Docker Compose）或 namespace（K8s）
-4. 寫入 artifacts（`.env` 或 ConfigMap/Secret）
-5. 建立持久儲存空間（bind mount 目錄或 PVC）
-6. 回傳 nil（成功）
+4. 建立持久儲存空間（bind mount 目錄或 PVC）
+5. 回傳 nil（成功）
 
 ### Start
 
 1. 驗證 `project.Status == stopped || starting`
 2. 執行 runtime 啟動指令（`docker compose up -d` 或 `kubectl apply`）
 3. 等待所有服務 healthy（polling 或 watch）
-4. 若逾時，回傳 `ErrAdapterTimeout`
+4. 若逾時，回傳 `StartError{Err: ErrAdapterTimeout, Health: <當前快照>}`
+5. 若服務未健康，回傳 `StartError{Err: ErrServiceNotHealthy, Health: <當前快照>}`
 
 ### Stop
 
@@ -317,7 +346,7 @@ Control Plane                RuntimeAdapter              Docker/K8s
 
 ### Destroy
 
-1. 驗證 `project.Status == stopped || error`
+1. 驗證 `project.Status == stopped || destroying || error`
 2. 執行 runtime 銷毀指令（`docker compose down -v` 或刪除 namespace）
 3. 清理專案目錄與持久資料
 
@@ -336,9 +365,9 @@ Control Plane                RuntimeAdapter              Docker/K8s
 |------|---------|---------|
 | 前置條件不滿足 | 回傳 `TransitionError` | `{ "error": "invalid_transition" }` |
 | Runtime 指令執行失敗 | 包裝為 `AdapterError` | `{ "error": "adapter_failed", "operation": "..." }` |
-| 健康檢查逾時 | 回傳 `ErrAdapterTimeout` | `{ "error": "timeout" }` |
+| 健康檢查逾時 | 回傳 `StartError{Err: ErrAdapterTimeout, Health: <snapshot>}` | `{ "error": "timeout" }` |
 | Runtime 不可用（如 Docker 未啟動） | 回傳 `ErrRuntimeNotFound` | `{ "error": "runtime_not_found" }` |
-| 部分服務失敗 | 回傳 `ErrServiceNotHealthy` + ProjectHealth 詳情 | `{ "error": "unhealthy", "services": {...} }` |
+| 部分服務失敗 | 回傳 `StartError{Err: ErrServiceNotHealthy, Health: <snapshot>}`；呼叫端可用 `errors.As` 取得 `*StartError` 以存取健康詳情 | `{ "error": "unhealthy" }` |
 
 ---
 
@@ -369,12 +398,13 @@ Control Plane                RuntimeAdapter              Docker/K8s
 ```go
 // MockRuntimeAdapter 用於測試的 mock 實作。
 type MockRuntimeAdapter struct {
-    CreateFunc      func(ctx context.Context, project *ProjectModel, config *ProjectConfig) error
-    StartFunc       func(ctx context.Context, project *ProjectModel) error
-    StopFunc        func(ctx context.Context, project *ProjectModel) error
-    DestroyFunc     func(ctx context.Context, project *ProjectModel) error
-    StatusFunc      func(ctx context.Context, project *ProjectModel) (*ProjectHealth, error)
+    CreateFunc       func(ctx context.Context, project *ProjectModel, config *ProjectConfig) error
+    StartFunc        func(ctx context.Context, project *ProjectModel) error
+    StopFunc         func(ctx context.Context, project *ProjectModel) error
+    DestroyFunc      func(ctx context.Context, project *ProjectModel) error
+    StatusFunc       func(ctx context.Context, project *ProjectModel) (*ProjectHealth, error)
     RenderConfigFunc func(ctx context.Context, project *ProjectModel, config *ProjectConfig) ([]Artifact, error)
+    ApplyConfigFunc  func(ctx context.Context, project *ProjectModel, config *ProjectConfig) error
 }
 ```
 
@@ -427,13 +457,17 @@ type MockRuntimeAdapter struct {
 
 ### Reviewer A（架構）
 
-- **狀態：**
-- **意見：**
+- **狀態：** 🔁 REVISE（第一輪）
+- **第一輪意見（摘要）：**
+  1. 🔴 **[已修正]** `destroying` 狀態孤立：`Destroy` 前置條件遺漏 `destroying` → 加入 `stopped || destroying || error`
+  2. 🔴 **[已修正]** `ErrServiceNotHealthy + ProjectHealth` 無法共回傳：定義 `StartError` 結構攜帶 `Health *ProjectHealth` 與 `Err error`
 
 ### Reviewer B（實作）
 
-- **狀態：**
-- **意見：**
+- **狀態：** 🔁 REVISE（第一輪）
+- **第一輪意見（摘要）：**
+  1. 🔴 **[已修正]** 冪等性與前置條件矛盾：明確說明前置條件由呼叫端負責，Adapter 冪等性指 runtime 操作層面
+  2. 🔴 **[已修正]** 設定更新路徑不可實作：`RenderConfig` 只渲染不寫入，增加 `ApplyConfig` 方法處理渲染+寫入
 
 ---
 
