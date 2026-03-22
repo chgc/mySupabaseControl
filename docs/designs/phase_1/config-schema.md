@@ -7,7 +7,7 @@
 
 ## 狀態
 
-design_complete
+revising（第一輪審查後修訂中）
 
 ## Phase
 
@@ -18,7 +18,7 @@ design_complete
 
 ## 目的
 
-定義一套有型別的設定 schema，將 `docker-compose.yml` 中 89 個環境變數結構化管理，並提供渲染介面以支援多種 runtime 目標（`.env`、K8s ConfigMap/Secret）。
+定義一套有型別的設定 schema，將 `docker-compose.yml` 中 94 個環境變數結構化管理，並提供渲染介面以支援多種 runtime 目標（`.env`、K8s ConfigMap/Secret）。
 
 本功能解決的核心問題：目前環境變數以未分類的平面 `.env` 檔案管理，所有專案共用基底 secrets，使用者無法清楚區分哪些值可修改、哪些由系統產生。
 
@@ -28,7 +28,7 @@ design_complete
 
 ### 包含
 
-- 89 個環境變數的完整分類目錄
+- 94 個環境變數的完整分類目錄
 - 有型別的設定 schema Go struct
 - 全域設定 vs 每專案設定的維度
 - ConfigRenderer 介面定義
@@ -75,7 +75,7 @@ design_complete
 | `KONG_DNS_ORDER` | `LAST,A,CNAME` | kong | DNS 解析順序 |
 | `KONG_DNS_NOT_FOUND_TTL` | `1` | kong | DNS 快取 TTL |
 | `DB_AFTER_CONNECT_QUERY` | `SET search_path TO _realtime` | realtime | Realtime DB search path |
-| `DB_ENC_KEY` | `supabaserealtime` | realtime | Realtime 加密 key |
+| `DB_ENC_KEY` | `supabaserealtime` | realtime | Realtime 加密 key（TODO：Phase 2 應改為每專案獨立產生的 GeneratedSecret，避免多專案共用同一加密金鑰） |
 | `ERL_AFLAGS` | `-proto_dist inet_tcp` | realtime, supavisor | Erlang TCP 協議 |
 | `APP_NAME` | `realtime` | realtime | 服務名稱 |
 | `SEED_SELF_HOST` | `true` | realtime | 自動建立 tenant |
@@ -83,10 +83,8 @@ design_complete
 | `STORAGE_BACKEND` | `file` | storage | 檔案系統儲存 |
 | `FILE_SIZE_LIMIT` | `52428800` | storage | 50 MB 限制 |
 | `ENABLE_IMAGE_TRANSFORMATION` | `true` | storage | 啟用圖片轉換 |
-| `IMGPROXY_BIND` | `:5001` | imgproxy | 監聽 port |
 | `IMGPROXY_LOCAL_FILESYSTEM_ROOT` | `/` | imgproxy | 檔案系統根目錄 |
 | `IMGPROXY_USE_ETAG` | `true` | imgproxy | ETag 快取 |
-| `PG_META_PORT` | `28080` | meta | Meta API port |
 | `LOGFLARE_NODE_HOST` | `127.0.0.1` | analytics | Logflare 節點 |
 | `DB_SCHEMA` | `_analytics` | analytics | Analytics schema |
 | `LOGFLARE_SINGLE_TENANT` | `true` | analytics | 單一租戶 |
@@ -106,8 +104,8 @@ design_complete
 |---------|---------|---------|------|
 | `KONG_HTTP_PORT` | 自動分配（起始 28081） | kong | 對外 API port |
 | `KONG_HTTPS_PORT` | `KONG_HTTP_PORT + 1` | kong | 對外 HTTPS port |
-| `POSTGRES_PORT` | 自動分配（起始 5432） | db, supavisor, 所有 DB 連線 | PostgreSQL port |
-| `POOLER_PROXY_PORT_TRANSACTION` | 自動分配（起始 6543） | supavisor | 連線池 port |
+| `POSTGRES_PORT` | 自動分配（起始 54320） | db, supavisor, 所有 DB 連線 | PostgreSQL port |
+| `POOLER_PROXY_PORT_TRANSACTION` | 自動分配（起始 64300） | supavisor | 連線池 port |
 | `API_EXTERNAL_URL` | `http://localhost:${KONG_HTTP_PORT}` | auth | 對外 API URL |
 | `SUPABASE_PUBLIC_URL` | `http://localhost:${KONG_HTTP_PORT}` | storage, functions, studio | 對外 URL |
 | `SITE_URL` | `http://localhost:3000` | auth | 前端 redirect URL |
@@ -117,17 +115,18 @@ design_complete
 | `STORAGE_TENANT_ID` | `stub` | storage | 儲存租戶 ID |
 | `POOLER_TENANT_ID` | `${SLUG}` | supavisor | 連線池租戶 ID |
 | `DOCKER_SOCKET_LOCATION` | `/var/run/docker.sock` | vector | Docker socket 路徑 |
+| `STUDIO_PORT` | 自動分配（起始 54323） | studio | Studio UI port |
+| `PG_META_PORT` | 自動分配（起始 54380） | meta | Meta API port |
+| `IMGPROXY_BIND` | `:${IMGPROXY_PORT}`（自動分配，起始 54381）| imgproxy | ImgProxy 監聽 port |
 
 #### GeneratedSecret（每專案自動產生）
 
 | 環境變數 | 產生規則 | 使用服務 | 說明 |
 |---------|---------|---------|------|
 | `JWT_SECRET` | 64 字元 hex random | auth, rest, realtime, storage, functions, supavisor, db | JWT 簽名密鑰 |
-| `JWT_EXPIRY` | `3600`（預設） | auth, rest, db | JWT 過期時間（秒） |
 | `ANON_KEY` | JWT token（role=anon, 由 JWT_SECRET 簽發） | kong, storage, functions, studio | 公開 API key |
 | `SERVICE_ROLE_KEY` | JWT token（role=service_role, 由 JWT_SECRET 簽發） | kong, storage, functions, studio | 管理 API key |
 | `POSTGRES_PASSWORD` | 32 字元 alphanumeric random | 所有 DB 連線服務 | DB 密碼 |
-| `DASHBOARD_USERNAME` | `supabase`（預設） | kong | Studio 登入帳號 |
 | `DASHBOARD_PASSWORD` | 32 字元 alphanumeric random | kong | Studio 登入密碼 |
 | `SECRET_KEY_BASE` | 64 字元 hex random | realtime, supavisor | Phoenix session key |
 | `VAULT_ENC_KEY` | 32 字元 alphanumeric random | supavisor | Vault 加密金鑰 |
@@ -169,6 +168,8 @@ design_complete
 | `POOLER_DEFAULT_POOL_SIZE` | `15` | supavisor | 預設連線池大小 |
 | `POOLER_MAX_CLIENT_CONN` | `200` | supavisor | 最大客戶端連線數 |
 | `POOLER_DB_POOL_SIZE` | `5` | supavisor | DB 連線池大小 |
+| `JWT_EXPIRY` | `3600` | auth, rest, db | JWT token 過期時間（秒），使用者可依需求調整 |
+| `DASHBOARD_USERNAME` | `supabase` | kong | Studio 登入帳號，使用者可自訂 |
 
 > **備註：** OAuth provider 設定（Google、GitHub、Azure）、SMS provider 設定、MFA 設定等預設為註解狀態，
 > 在 Phase 1 設計中列為 `UserOverridable`，但暫不實作 UI。使用者可透過 override 機制啟用。
@@ -177,6 +178,25 @@ design_complete
 
 ```go
 package domain
+
+// ServiceName 定義 Supabase stack 中的服務名稱。
+type ServiceName string
+
+const (
+    ServiceDB        ServiceName = "db"
+    ServiceAuth      ServiceName = "auth"
+    ServiceRest      ServiceName = "rest"
+    ServiceRealtime  ServiceName = "realtime"
+    ServiceStorage   ServiceName = "storage"
+    ServiceImgProxy  ServiceName = "imgproxy"
+    ServiceKong      ServiceName = "kong"
+    ServiceMeta      ServiceName = "meta"
+    ServiceFunctions ServiceName = "functions"
+    ServiceAnalytics ServiceName = "analytics"
+    ServicePooler    ServiceName = "supavisor"
+    ServiceStudio    ServiceName = "studio"
+    ServiceVector    ServiceName = "vector"
+)
 
 // ConfigCategory 定義環境變數的分類。
 type ConfigCategory string
@@ -195,6 +215,9 @@ const (
     ScopeGlobal  ConfigScope = "global"   // 全 host 共用
     ScopeProject ConfigScope = "project"  // 每專案獨立
 )
+
+// 注意：Phase 1 所有環境變數均為 ScopeProject。
+// ScopeGlobal 保留給未來全 host 共用的設定（如 Traefik 路由設定）。
 
 // ConfigEntry 定義一個環境變數的 metadata。
 type ConfigEntry struct {
@@ -228,16 +251,43 @@ type ProjectConfig struct {
     Overrides map[string]string
 }
 
-// ResolveConfig 從 schema、專案模型與使用者覆寫，計算出完整的 ProjectConfig。
+// ResolveConfig 從 schema、專案模型、已產生的 secrets、port 分配結果與使用者覆寫，
+// 計算出完整的 ProjectConfig。
 // 優先順序：使用者覆寫 > 每專案計算值 > 產生的 secret > 靜態預設值
-func ResolveConfig(project *ProjectModel, overrides map[string]string) (*ProjectConfig, error)
+// secrets：由 GenerateProjectSecrets 產生（新建專案）或從 ConfigRepository 載入（已有專案）
+// portSet：由 PortAllocator 分配（新建專案）或從 ConfigRepository 載入（已有專案）
+func ResolveConfig(
+    project *ProjectModel,
+    secrets map[string]string,
+    portSet *PortSet,
+    overrides map[string]string,
+) (*ProjectConfig, error)
 
 // Get 取得指定 key 的值。
+// 對 Sensitive=true 的欄位回傳遮罩值（"***"）。
 func (c *ProjectConfig) Get(key string) (string, bool)
 
 // GetSensitive 取得敏感值（僅在授權情境下使用）。
+// 與 Get 的差異：Get 對 Sensitive=true 的欄位回傳遮罩值（"***"）；
+// GetSensitive 回傳原始值，應只在需要實際值的情境（如渲染 .env）中使用。
 func (c *ProjectConfig) GetSensitive(key string) (string, bool)
 ```
+
+### Config 持久化策略
+
+`ProjectConfig` 的完整設定（含 secrets）透過 `state-store.md` 中定義的 `ConfigRepository` 持久化至 Supabase `project_configs` 資料表（`is_secret = true` 的敏感值 Phase 1 以明文儲存，Phase 3 評估 Supabase Vault 加密）。
+
+**新建專案流程：**
+1. `GenerateProjectSecrets(gen)` — 產生 secrets
+2. `PortAllocator.AllocatePorts()` — 分配 ports
+3. `ResolveConfig(project, secrets, portSet, overrides)` — 合併設定
+4. `ConfigRepository.SaveConfig(ctx, slug, config)` — 持久化
+
+**載入現有專案：**
+1. `ConfigRepository.GetConfig(ctx, slug)` — 從 DB 載入（含已存 secrets）
+2. `ResolveConfig(project, loadedSecrets, loadedPortSet, overrides)` — 套用最新 overrides
+
+此設計確保 JWT_SECRET 等 secrets 在服務重啟後不會被重新產生。
 
 ### ConfigRenderer 介面
 
@@ -294,11 +344,17 @@ secrets, err := GenerateProjectSecrets(generator)
 // 3. 計算每專案設定（port、URL 等）
 projectVars := ComputePerProjectVars(project, portAllocator)
 
-// 4. 合併使用者覆寫
-config, err := ResolveConfig(project, userOverrides)
+// 4. 合併所有設定值
+config, err := ResolveConfig(project, secrets, portSet, userOverrides)
 
 // 5. 渲染為 runtime artifacts
 artifacts, err := renderer.Render(config)
+```
+
+```go
+// ComputePerProjectVars 根據 ProjectModel 與 PortSet 計算所有 PerProject 分類的環境變數。
+// 回傳 key-value map，key 為環境變數名稱。
+func ComputePerProjectVars(project *ProjectModel, ports *PortSet) map[string]string
 ```
 
 ---
@@ -309,7 +365,7 @@ artifacts, err := renderer.Render(config)
 
 1. `GenerateProjectSecrets(gen)` — 產生 JWT_SECRET、POSTGRES_PASSWORD 等
 2. `ComputePerProjectVars(project, portAllocator)` — 計算 KONG_HTTP_PORT、API_EXTERNAL_URL 等
-3. `ResolveConfig(project, overrides)` — 合併所有設定值
+3. `ResolveConfig(project, secrets, portSet, overrides)` — 合併所有設定值
 4. 驗證所有 `Required` 的 ConfigEntry 都有值
 5. `renderer.Render(config)` — 渲染為 .env（或 K8s YAML）
 6. 寫入檔案系統
@@ -324,12 +380,18 @@ type PortAllocator interface {
     AllocatePorts() (*PortSet, error)
 }
 
+// 注意：AllocatePorts 的實作必須確保並發安全（例如透過 DB 鎖或序列化請求），
+// 避免多個並發的「建立專案」請求分配到相同的 port。
+
 // PortSet 包含一個專案所需的所有 port。
 type PortSet struct {
-    KongHTTP       int // 對外 API port（預設起始 28081）
-    KongHTTPS      int // 對外 HTTPS port
-    PostgresPort   int // PostgreSQL port（預設起始 54320）
-    PoolerPort     int // Supavisor transaction port（預設起始 64300）
+    KongHTTP       int // 對外 API port（起始 28081）
+    KongHTTPS      int // 對外 HTTPS port（KongHTTP + 1）
+    PostgresPort   int // PostgreSQL port（起始 54320）
+    PoolerPort     int // Supavisor transaction port（起始 64300）
+    StudioPort     int // Studio UI port（起始 54323）
+    MetaPort       int // pg-meta API port（起始 54380）
+    ImgProxyPort   int // imgproxy port（起始 54381）
 }
 ```
 
@@ -344,13 +406,25 @@ type PortSet struct {
 | 必要設定值遺漏 | 回傳 `ErrMissingRequiredConfig` + 遺漏的 key 清單 | `{ "error": "missing_config", "keys": [...] }` |
 | 使用者覆寫的 key 不在 UserOverridable 分類 | 回傳 `ErrConfigNotOverridable` | `{ "error": "not_overridable", "key": "..." }` |
 
+```go
+// ErrMissingRequiredConfig 在必要設定值遺漏時回傳。
+// 為 struct 型別以攜帶遺漏的 key 清單。
+type ErrMissingRequiredConfig struct {
+    Keys []string
+}
+
+func (e *ErrMissingRequiredConfig) Error() string {
+    return fmt.Sprintf("missing required config keys: %v", e.Keys)
+}
+```
+
 ---
 
 ## 測試策略
 
 ### 需要測試的行為
 
-- ConfigSchema 完整性：所有 89 個環境變數都有定義
+- ConfigSchema 完整性：所有 94 個環境變數都有定義
 - ResolveConfig 優先順序：使用者覆寫 > 每專案 > 產生的 secret > 預設值
 - Secret 產生：JWT_SECRET 格式正確、ANON_KEY 是合法 JWT
 - Port 分配：不衝突、邊界條件（全滿時回傳錯誤）
@@ -409,7 +483,7 @@ type PortSet struct {
 ## 待決問題
 
 - Port 自動分配的起始值與範圍需要確認（避免與常用 port 衝突）
-- JWT_EXPIRY 是否應歸類為 UserOverridable（讓使用者可調整 token 過期時間）？
+- ✅ JWT_EXPIRY 歸類：已確定改為 UserOverridable，允許使用者調整 token 過期時間。
 - OAuth/SMS/MFA 相關的環境變數（目前為註解狀態）如何處理？建議在 schema 中定義但標記為 optional。
 - 是否需要設定版本管理（migration）機制？建議 Phase 1 不需要，Phase 3 再評估。
 
@@ -419,13 +493,30 @@ type PortSet struct {
 
 ### Reviewer A（架構）
 
-- **狀態：**
-- **意見：**
+- **狀態：** 🔁 REVISE（第一輪）
+- **第一輪意見（摘要）：**
+  1. 🔴 **[已修正]** Port 起始值矛盾（5432 vs 54320）
+  2. 🔴 **[已修正]** PortSet 不完整、StaticDefault 誤放 per-project ports → 移至 PerProject，補充 Studio/Meta/ImgProxy port
+  3. 🔴 **[已修正]** JWT_EXPIRY 分類錯誤 → 移至 UserOverridable
+  4. 🔴 **[已修正]** DASHBOARD_USERNAME 分類錯誤 → 移至 UserOverridable
+  5. 🔴 **[已修正]** env var 數量不符（89 → 94）
+  6. 🔴 **[已修正]** ResolveConfig 簽名矛盾 → 加入 secrets 與 portSet 參數
+  7. 🟡 **[已修正]** DB_ENC_KEY 安全性標記 TODO
+  8. 🔵 **[已修正]** ConfigScope 使用說明、PortAllocator 並發安全
 
 ### Reviewer B（實作）
 
-- **狀態：**
-- **意見：**
+- **狀態：** 🔁 REVISE（第一輪）
+- **第一輪意見（摘要）：**
+  1. 🔴 **[已修正]** ResolveConfig 簽名不完整（與 Reviewer A 一致）
+  2. 🔴 **[已修正]** Config 持久化策略缺失 → 加入持久化說明，參考 state-store ConfigRepository
+  3. 🔴 **[已修正]** Port 起始值矛盾（與 Reviewer A 一致）
+  4. 🔴 **[已修正]** ServiceName 型別未定義 → 加入 const 定義
+  5. 🟡 **[已修正]** JWT_EXPIRY 分類錯誤（與 Reviewer A 一致）
+  6. 🟡 **[已修正]** ErrMissingRequiredConfig 應為 struct
+  7. 🟡 **[已修正]** ComputePerProjectVars 缺少正式簽名
+  8. 🟡 **[已修正]** PortAllocator 並發安全說明
+  9. 🟡 **[已修正]** GetSensitive vs Get 行為差異說明
 
 ---
 

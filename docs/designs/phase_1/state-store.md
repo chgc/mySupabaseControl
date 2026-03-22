@@ -7,7 +7,7 @@
 
 ## 狀態
 
-design_complete
+revising（第一輪審查後修訂中）
 
 ## Phase
 
@@ -43,16 +43,19 @@ design_complete
 
 ### DB Schema
 
+> **Health 欄位：** `ProjectModel.Health *ProjectHealth` 為 runtime-only 欄位，不持久化至 DB。`GetBySlug` 回傳的 `Health` 固定為 `nil`，由呼叫端（runtime adapter）負責填充。
+
 #### `projects` 資料表
 
 ```sql
 CREATE TABLE projects (
-    slug         TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'creating',
-    last_error   TEXT,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    slug            TEXT PRIMARY KEY,
+    display_name    TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'creating',
+    previous_status TEXT,
+    last_error      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT valid_slug CHECK (
         slug ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'
@@ -61,6 +64,11 @@ CREATE TABLE projects (
     CONSTRAINT valid_status CHECK (
         status IN ('creating', 'stopped', 'starting', 'running',
                    'stopping', 'destroyed', 'error')
+    ),
+    CONSTRAINT valid_previous_status CHECK (
+        previous_status IS NULL OR
+        previous_status IN ('creating', 'stopped', 'starting', 'running',
+                            'stopping', 'destroyed', 'error')
     ),
     CONSTRAINT valid_display_name CHECK (
         length(display_name) BETWEEN 1 AND 100
@@ -90,7 +98,7 @@ CREATE INDEX idx_projects_status ON projects (status)
 
 ```sql
 CREATE TABLE project_configs (
-    project_slug TEXT NOT NULL REFERENCES projects(slug) ON DELETE CASCADE,
+    project_slug TEXT NOT NULL REFERENCES projects(slug),
     key          TEXT NOT NULL,
     value        TEXT NOT NULL,
     is_secret    BOOLEAN NOT NULL DEFAULT false,
@@ -118,7 +126,7 @@ CREATE TRIGGER set_config_updated_at
 -- 使用者明確設定的覆寫值，與計算值分開儲存。
 -- 當使用者覆寫一個 UserOverridable 值時，記錄在此表。
 CREATE TABLE project_overrides (
-    project_slug TEXT NOT NULL REFERENCES projects(slug) ON DELETE CASCADE,
+    project_slug TEXT NOT NULL REFERENCES projects(slug),
     key          TEXT NOT NULL,
     value        TEXT NOT NULL,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -136,6 +144,8 @@ CREATE TRIGGER set_override_updated_at
 ### RLS Policies
 
 ```sql
+-- TODO: Phase 1 暫用 USING (true) 允許所有存取（因後端已用 service_role key 連線）。
+-- 若未來需細緻 RLS，應改為 USING (auth.role() = 'service_role')。
 -- Control Plane 後端使用 service_role key 存取，繞過 RLS。
 -- 若未來需要開放 PostgREST 直接存取（非透過後端），則需定義 RLS policies。
 -- Phase 1 暫不啟用 RLS，所有存取透過後端 service_role。
@@ -146,10 +156,16 @@ ALTER TABLE project_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_overrides ENABLE ROW LEVEL SECURITY;
 
 -- service_role 完整存取
+-- TODO: Phase 1 暫用 USING (true) 允許所有存取（因後端已用 service_role key 連線）。
+-- 若未來需細緻 RLS，應改為 USING (auth.role() = 'service_role')。
 CREATE POLICY "service_role_full_access" ON projects
     FOR ALL USING (true) WITH CHECK (true);
+-- TODO: Phase 1 暫用 USING (true) 允許所有存取（因後端已用 service_role key 連線）。
+-- 若未來需細緻 RLS，應改為 USING (auth.role() = 'service_role')。
 CREATE POLICY "service_role_full_access" ON project_configs
     FOR ALL USING (true) WITH CHECK (true);
+-- TODO: Phase 1 暫用 USING (true) 允許所有存取（因後端已用 service_role key 連線）。
+-- 若未來需細緻 RLS，應改為 USING (auth.role() = 'service_role')。
 CREATE POLICY "service_role_full_access" ON project_overrides
     FOR ALL USING (true) WITH CHECK (true);
 ```
@@ -174,21 +190,33 @@ type ProjectRepository interface {
 
     // GetBySlug 以 slug 查詢專案。
     // 若不存在，回傳 ErrProjectNotFound。
+    // Health 欄位為 runtime-only，GetBySlug 回傳的 ProjectModel.Health 固定為 nil，
+    // 由 runtime adapter 在查詢後填充（不持久化至 DB）。
     GetBySlug(ctx context.Context, slug string) (*ProjectModel, error)
 
     // List 列出所有非 destroyed 的專案。
     // 可選 filters：依狀態篩選。
     List(ctx context.Context, filters ...ListFilter) ([]*ProjectModel, error)
 
-    // UpdateStatus 更新專案狀態。
-    // 在更新前驗證狀態轉換合法性。
-    UpdateStatus(ctx context.Context, slug string, status ProjectStatus, lastError string) error
+    // UpdateStatus 更新專案狀態與 previous_status。
+    // lastError 僅在 status 為 StatusError 時有意義；
+    // 其他狀態下傳入空字串，實作應清空 DB 中的 last_error 欄位。
+    // previousStatus 為轉換前的狀態，應在更新前由呼叫端傳入（通常從 ProjectModel.Status 取得）。
+    // 在更新前不在此層驗證狀態轉換合法性（此為 domain 層職責）。
+    UpdateStatus(ctx context.Context, slug string, status, previousStatus ProjectStatus, lastError string) error
 
     // Delete 將專案標記為 destroyed（soft delete）。
     Delete(ctx context.Context, slug string) error
 
     // Exists 檢查 slug 是否已存在。
+    // 注意：destroyed 狀態的專案也算「存在」（返回 true），
+    // 因為 destroyed slug 不可被新專案復用。
+    // 注意：Exists() 為 best-effort 預檢查。真正的唯一性保證由 Create() 的
+    // PK 衝突（轉為 ErrProjectAlreadyExists）提供，不應依賴 Exists() 作為唯一性保證。
     Exists(ctx context.Context, slug string) (bool, error)
+
+    // 注意：display_name 在 Phase 1 為不可變欄位。
+    // 若未來需支援重命名，應加入 UpdateDisplayName 方法。
 }
 
 // ListFilter 是 List 方法的篩選選項。
@@ -211,7 +239,8 @@ func WithStatus(status ProjectStatus) ListFilter {
 ```go
 // ConfigRepository 定義專案設定的持久化操作。
 type ConfigRepository interface {
-    // SaveConfig 儲存專案的完整設定（覆寫已存在的設定）。
+    // SaveConfig 使用 UPSERT 語意（INSERT ... ON CONFLICT DO UPDATE），
+    // 可安全地重複呼叫（幂等操作）。
     SaveConfig(ctx context.Context, projectSlug string, config *ProjectConfig) error
 
     // GetConfig 取得專案的完整設定。
@@ -236,6 +265,9 @@ type Store interface {
     ProjectRepository
     ConfigRepository
 }
+
+// 注意：Store 組合介面為 Phase 1 實作便利性取捨。
+// 若未來 Config 操作需獨立擴充或分別 mock，應分拆為獨立注入點。
 ```
 
 ---
@@ -256,12 +288,13 @@ type Store interface {
 
 ### 更新狀態
 
-1. `repo.UpdateStatus(ctx, slug, newStatus, lastError)` — UPDATE projects SET status, last_error, updated_at
+1. `repo.UpdateStatus(ctx, slug, newStatus, previousStatus, lastError)` — UPDATE projects SET status, previous_status, last_error, updated_at
 
 ### 刪除專案
 
 1. `repo.Delete(ctx, slug)` — UPDATE projects SET status = 'destroyed'
-2. `project_configs` 與 `project_overrides` 透過 CASCADE 處理（或保留供審計）
+2. `project_configs` 與 `project_overrides` 記錄**保留不刪除**，供審計用途。
+   （soft delete 不觸發 FK CASCADE；若需清除，請明確呼叫 `DeleteConfig`）
 
 ---
 
@@ -272,8 +305,16 @@ type Store interface {
 | 專案不存在 | 回傳 `ErrProjectNotFound` | `{ "error": "not_found" }` |
 | Slug 重複 | 回傳 `ErrProjectAlreadyExists`（由 DB PK 約束捕捉） | `{ "error": "project_exists" }` |
 | DB 連線失敗 | 包裝為 `ErrStoreUnavailable` | `{ "error": "store_unavailable" }` |
-| 不合法的狀態值 | 由 DB CHECK 約束捕捉，轉為 `ErrInvalidTransition` | `{ "error": "invalid_status" }` |
+| 不合法的 status 字串值 | 由 DB CHECK 約束捕捉，包裝為 `ErrStoreInternal` | `{ "error": "store_internal" }` |
 | Context 逾時 | 透過 `context.DeadlineExceeded` 傳播 | `{ "error": "timeout" }` |
+
+### PostgreSQL Error Code 映射
+
+| PostgreSQL 錯誤碼 | 錯誤名稱 | 映射為 |
+|----------|---------|--------|
+| `23505` | `unique_violation` | `ErrProjectAlreadyExists` |
+| 查無資料（0 rows）| — | `ErrProjectNotFound` |
+| 連線失敗 | — | `ErrStoreUnavailable` |
 
 ---
 
@@ -352,13 +393,29 @@ type Store interface {
 
 ### Reviewer A（架構）
 
-- **狀態：**
-- **意見：**
+- **狀態：** 🔁 REVISE（第一輪）
+- **第一輪意見（摘要）：**
+  1. 🔴 **[已修正]** DDL 缺 `previous_status` 欄位 → 加入欄位與 CHECK 約束，更新 UpdateStatus 簽名
+  2. 🔴 **[已修正]** ON DELETE CASCADE 與 soft delete 語意衝突 → 移除 CASCADE，保留審計記錄
+  3. 🟡 **[已修正]** ProjectHealth 未持久化說明缺失
+  4. 🟡 **[已修正]** ErrInvalidTransition 責任邊界錯誤 → 改為 ErrStoreInternal
+  5. 🟡 **[已修正]** Exists() 對 destroyed slug 語意未定義
+  6. 🟡 **[已修正]** UpdateStatus lastError 清除行為未說明
+  7. 🔵 **[已修正]** Store 介面 ISP 說明、RLS TODO、N4 備注
 
 ### Reviewer B（實作）
 
-- **狀態：**
-- **意見：**
+- **狀態：** 🔁 REVISE（第一輪）
+- **第一輪意見（摘要）：**
+  1. 🔴 **[已修正]** DDL 缺 `previous_status` 欄位（與 Reviewer A 一致）
+  2. 🔴 **[已修正]** ON DELETE CASCADE 與 soft delete 衝突（與 Reviewer A 一致）
+  3. 🔴 **[已修正]** ProjectHealth 完全無持久化策略 → 明確聲明 runtime-only，GetBySlug 回傳 nil Health
+  4. 🔴 **[已修正]** 缺少 display_name 更新路徑 → 明確聲明 Phase 1 不可變
+  5. 🟡 **[已修正]** UpdateStatus lastError 應為 *string 或說明空字串語意 → 加入 godoc 說明
+  6. 🟡 **[已修正]** Exists() TOCTOU 說明
+  7. 🟡 **[已修正]** SaveConfig UPSERT 語意說明
+  8. 🟡 **[已修正]** PostgreSQL error code 映射
+  9. 🟡 **[已修正]** UpdateStatus 狀態轉換驗證責任 → 移至 domain 層
 
 ---
 
