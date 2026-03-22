@@ -122,7 +122,7 @@ Phase 1 完成後，系統應具備：
 | 任務 ID | 說明 | 狀態 |
 |---------|------|------|
 | `domain-runtime-adapter` | `RuntimeAdapter` interface（7 方法）、`AdapterError`、`StartError`、factory stub | ✅ done |
-| `domain-mock-adapter` | `MockRuntimeAdapter` struct（7 個 func 欄位） | [ ] pending |
+| `domain-mock-adapter` | `MockRuntimeAdapter` struct（7 個 func 欄位） | ✅ done |
 
 #### Group 6 — Store 層
 

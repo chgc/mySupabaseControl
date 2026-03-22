@@ -478,7 +478,7 @@ type MockRuntimeAdapter struct {
 | 任務 ID | 檔案 | 說明 | 狀態 |
 |---------|------|------|------|
 | `domain-runtime-adapter` | `runtime_adapter.go` | `RuntimeAdapter` interface（7 方法：Create, Start, Stop, Destroy, Status, RenderConfig, ApplyConfig）、`AdapterError` struct、`StartError` struct（含 `Health *ProjectHealth`）、sentinel errors、`RuntimeType`、`AdapterOption`、`NewRuntimeAdapter()` factory（Phase 1 回傳 stub）、`GlobalServiceManager` interface（可選）、`GlobalHealth` struct | ✅ done |
-| `domain-mock-adapter` | `mock_adapter.go` | `MockRuntimeAdapter` struct，7 個 `func` 欄位（每方法一個），供 domain 層單元測試使用，不依賴任何外部系統 | [ ] pending |
+| `domain-mock-adapter` | `mock_adapter.go` | `MockRuntimeAdapter` struct，7 個 `func` 欄位（每方法一個），供 domain 層單元測試使用，不依賴任何外部系統 | ✅ done |
 
 ---
 
