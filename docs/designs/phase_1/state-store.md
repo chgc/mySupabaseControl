@@ -7,7 +7,7 @@
 
 ## 狀態
 
-revising（第三輪審查後修訂完成）
+revising（第四輪審查後修訂完成）
 
 ## Phase
 
@@ -260,6 +260,7 @@ type ConfigRepository interface {
 
     // SaveOverrides 全量替換此專案的 overrides（先 DELETE 再 INSERT）。
     // 實作必須在單一 DB transaction（或等效原子操作）中執行，避免 partial write。
+    // 若 overrides 為空 map（len == 0），則跳過 INSERT，僅執行 DELETE，等效於清除所有覆寫。
     // 若需合併（per-key UPSERT），呼叫端應先 GetOverrides 再合併後呼叫 SaveOverrides。
     SaveOverrides(ctx context.Context, projectSlug string, overrides map[string]string) error
 
@@ -358,6 +359,7 @@ type Store interface {
 - SaveConfig：正常儲存、覆寫已存在的設定
 - GetConfig：存在/不存在
 - SaveOverrides + GetOverrides：往返一致性
+- SaveOverrides 空 map：清除所有覆寫，確認 GetOverrides 回傳空 map
 
 ### 測試類型分配
 
@@ -422,7 +424,7 @@ type Store interface {
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ ✅ APPROVED（第三輪）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ ✅ APPROVED（第三輪）→ ✅ APPROVED（第四輪）
 - **第一輪意見（摘要）：** 4 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
   1. 🔴 **[已修正]** DeleteConfig godoc 與 Delete 流程矛盾 → 明確為管理操作，正常 destroy 不呼叫
@@ -431,14 +433,17 @@ type Store interface {
   4. 🟡 **[已修正]** UpdateStatus stale read 風險補充到待決問題
   5. 🟡 **[已修正]** List 排序說明
 - **第三輪意見（摘要）：**
-  - 所有前輪問題均已正確修復，架構設計健全。
-  - 🟡 **[已修正]** UpdateStatus previousStatus godoc "代表尚未進入 error" → 改為 "首次轉換無前一狀態"
+  - 🟡 **[已修正]** UpdateStatus previousStatus godoc 措辭 → "首次轉換無前一狀態"
   - 🟡 **[已修正]** Delete godoc 補充 0 rows → ErrProjectNotFound
   - 🟡 **[已修正]** WithStatus multiple filter 行為說明（last-write-wins）
+- **第四輪意見（摘要）：**
+  - 所有前輪問題均已正確修復，架構設計健全。無新阻斷性問題。
+  - 🟡 Health 欄位未持久化建議加說明（runtime-only，GetBySlug 回傳 nil 為正確行為）
+  - 🟡 SaveConfig FK violation 注意事項（呼叫端需先 Create）
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ 🔁 REVISE（第三輪）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ 🔁 REVISE（第三輪）→ 🔁 REVISE（第四輪）
 - **第一輪意見（摘要）：** 4 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
   1. 🔴 **[已修正]** DeleteConfig godoc 矛盾（與 Reviewer A 一致）
@@ -451,6 +456,8 @@ type Store interface {
   3. 🟡 **[已修正]** error→error previousStatus domain 責任說明
   4. 🟡 **[已修正]** Delete SQL 完整範例
   5. 🟡 **[已修正]** GetBySlug destroyed 專案行為說明
+- **第四輪意見（摘要）：**
+  1. 🔴 **[已修正]** SaveOverrides 空 map → 無效 SQL（`INSERT ... VALUES` 無 rows） → godoc 明確：empty map 僅執行 DELETE，跳過 INSERT
 
 ---
 

@@ -7,7 +7,7 @@
 
 ## 狀態
 
-revising（第三輪審查後修訂完成）
+revising（第四輪審查後修訂完成）
 
 ## Phase
 
@@ -279,7 +279,7 @@ func (c *ProjectConfig) GetSensitive(key string) (string, bool)
 
 **新建專案流程：**
 1. `GenerateProjectSecrets(gen)` — 產生 secrets
-2. `PortAllocator.AllocatePorts()` — 分配 ports
+2. `PortAllocator.AllocatePorts(ctx)` — 分配 ports
 3. `ResolveConfig(project, secrets, portSet, overrides)` — 合併設定（內部計算 PerProject vars）
 4. `ConfigRepository.SaveConfig(ctx, slug, config)` — 持久化
 
@@ -347,7 +347,7 @@ schema := ConfigSchema()
 secrets, err := GenerateProjectSecrets(generator)
 
 // 3. 分配 ports（僅新建專案；載入已有專案時從 ProjectConfig 萃取）
-portSet, err := portAllocator.AllocatePorts()
+portSet, err := portAllocator.AllocatePorts(ctx)
 
 // 4. 合併所有設定值（ResolveConfig 內部呼叫 ComputePerProjectVars）
 config, err := ResolveConfig(project, secrets, portSet, userOverrides)
@@ -390,9 +390,9 @@ func ExtractPortSet(config *ProjectConfig) (*PortSet, error)
 ### 建立專案時的設定產生
 
 1. `GenerateProjectSecrets(gen)` — 產生 JWT_SECRET、POSTGRES_PASSWORD 等
-2. `portAllocator.AllocatePorts()` — 分配 KONG_HTTP_PORT、POSTGRES_PORT 等（回傳 *PortSet）
+2. `portAllocator.AllocatePorts(ctx)` — 分配 KONG_HTTP_PORT、POSTGRES_PORT 等（回傳 *PortSet）
 3. `ResolveConfig(project, secrets, portSet, overrides)` — 合併所有設定值（內部計算 PerProject vars）
-4. 驗證所有 `Required` 的 ConfigEntry 都有值
+4. 驗證所有必要的 ConfigEntry 都有值（此驗證由 `ResolveConfig` 內部執行，回傳 `ErrMissingRequiredConfig`）
 5. `renderer.Render(config)` — 渲染為 .env（或 K8s YAML）
 6. 寫入檔案系統
 7. `ConfigRepository.SaveConfig(ctx, slug, config)` — 持久化至 Supabase
@@ -404,7 +404,8 @@ func ExtractPortSet(config *ProjectConfig) (*PortSet, error)
 type PortAllocator interface {
     // AllocatePorts 為新專案分配一組 port。
     // 掃描現有專案與系統已佔用的 port，回傳未衝突的 port 組合。
-    AllocatePorts() (*PortSet, error)
+    // ctx 用於控制 DB 鎖超時與請求取消，防止 goroutine 洩漏。
+    AllocatePorts(ctx context.Context) (*PortSet, error)
 }
 
 // 注意：AllocatePorts 的實作必須確保並發安全（例如透過 DB 鎖或序列化請求），
@@ -466,6 +467,9 @@ func (e *ErrInvalidPortSet) Error() string {
     }
     return fmt.Sprintf("port key %q has invalid value %q", e.Key, e.Value)
 }
+
+// ErrNoAvailablePort 在 PortAllocator 找不到可用 port 時回傳。
+var ErrNoAvailablePort = errors.New("no available port")
 ```
 
 ---
@@ -581,6 +585,21 @@ func (e *ErrInvalidPortSet) Error() string {
   2. 🔴 **[已修正]** ComputePerProjectVars 流程矛盾（與 Reviewer A 一致）
   3. 🔴 **[已修正]** SaveConfig 隱式依賴 ConfigSchema() → 加入實作注意說明
   4. 🟡 **[已修正]** 測試策略補充 round-trip、ExtractPortSet 邊界案例
+
+**第四輪審查結果（兩位審查者）：**
+
+**Reviewer A（架構）— 🔁 REVISE**（基於舊版文件內容，實際文件已符合要求）
+> 注意：Reviewer A 的第四輪審查使用了較舊的文件摘要版本（非現有實際文件）。
+> 其所指出的兩個「問題」在實際文件中並不存在：
+> - 🔴 STUDIO_PORT / PG_META_PORT 不在 PerProject → 實際文件第 118-119 行已包含
+> - 🔴 StaticDefault / UserOverridable 重複計算 → 實際文件分類明確，無重複
+> 以下已修正之建議亦基於真實文件狀態：
+> - 🟡 **[已修正]** AllocatePorts() 缺少 ctx → 補充 `ctx context.Context` 參數
+
+**Reviewer B（實作）— 🔁 REVISE（第四輪）**
+1. 🔴 **[已修正]** AllocatePorts() 缺少 `ctx context.Context` → 會導致 DB 鎖無法超時、goroutine 洩漏
+2. 🟡 **[已修正]** ErrNoAvailablePort 無 Go 定義 → 補充 `var ErrNoAvailablePort = errors.New(...)`
+3. 🟡 **[已修正]** 建立流程步驟 4（驗證）說明模糊 → 明確標注驗證由 ResolveConfig 內部執行
 
 ---
 
