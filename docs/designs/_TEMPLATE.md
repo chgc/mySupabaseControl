@@ -10,6 +10,12 @@
 <!-- design_in_progress | design_complete | in_review | revise_requested | approved | tasks_generated | in_progress | code_review | done -->
 design_in_progress
 
+## Phase
+
+<!-- 此功能所屬的 Phase 編號與 Phase Plan 文件路徑 -->
+- **Phase：** <!-- Phase 1 / Phase 2 / Phase 3 / Phase 4 / Phase 5 -->
+- **Phase Plan：** <!-- docs/designs/phase-<N>-plan.md -->
+
 ---
 
 ## 目的

@@ -90,7 +90,12 @@ Runtime Adapter 必須抽象化上述所有差異。
 
 ## 開發路線圖
 
+> 每個 Phase 開始前，須依 `docs/designs/_PHASE_TEMPLATE.md` 產出對應的 Phase Plan 文件，
+> 將下方高階描述拆解為具體功能清單與依賴關係。詳見 `docs/REVIEW_GATEWAY.md`「前置階段 — Phase 規劃」。
+
 ### Phase 1 — 定義 Runtime 無關的 Control Plane 模型
+
+> **Phase Plan：** `docs/designs/phase-1-plan.md`（待建立）
 
 - 盤點 `docker-compose.yml` 中所有環境變數並分類：
   - **共用靜態預設值** — 所有專案相同（例如 `POSTGRES_HOST=db`、`SMTP_PORT=2500`）
@@ -112,6 +117,8 @@ Runtime Adapter 必須抽象化上述所有差異。
 
 ### Phase 2 — 實作 Docker Compose Runtime Adapter
 
+> **Phase Plan：** `docs/designs/phase-2-plan.md`（待建立）
+
 - 以 Docker Compose 作為底層 runtime 實作 adapter 介面。
 - `renderConfig` → 從設定 schema + 專案模型產生 `projects/<slug>/.env`。
 - `create` → slug 正規化、自動 port 分配（掃描可用 port）、目錄建立、per-project secret 產生、env 渲染。
@@ -122,6 +129,8 @@ Runtime Adapter 必須抽象化上述所有差異。
 - 現有 PS1/Bash 腳本成為參考實作後棄用。
 
 ### Phase 3 — Control Plane 後端與 Web UI
+
+> **Phase Plan：** `docs/designs/phase-3-plan.md`（待建立）
 
 **後端 API 端點：**
 
@@ -146,6 +155,8 @@ Runtime Adapter 必須抽象化上述所有差異。
 
 ### Phase 4 — 改善使用體驗
 
+> **Phase Plan：** `docs/designs/phase-4-plan.md`（待建立）
+
 - 建立專案只需輸入名稱。
 - 建立後清楚顯示連線資訊：
   - Studio URL、API URL、Postgres 連線字串
@@ -153,6 +164,8 @@ Runtime Adapter 必須抽象化上述所有差異。
 - 全專案狀態彙整總覽。
 
 ### Phase 5 — K8s Runtime Adapter（未來，Mac Mini）
+
+> **Phase Plan：** `docs/designs/phase-5-plan.md`（待建立）
 
 - 以相同 adapter 介面在本地 K8s（預計使用 k3s）上實作。
 - `renderConfig` → ConfigMap + Secret YAML（或 Helm values）。
