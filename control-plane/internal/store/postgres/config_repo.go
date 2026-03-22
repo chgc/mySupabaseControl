@@ -26,7 +26,7 @@ func NewConfigRepository(db DB) *ConfigRepository {
 	return &ConfigRepository{db: db}
 }
 
-// SaveConfig upserts all resolved config entries for a project.
+// SaveConfig upserts all resolved config entries for a project atomically.
 // Category and is_secret metadata are derived from domain.ConfigSchema().
 // Idempotent: safe to call multiple times.
 func (r *ConfigRepository) SaveConfig(ctx context.Context, projectSlug string, config *domain.ProjectConfig) error {
@@ -40,6 +40,12 @@ func (r *ConfigRepository) SaveConfig(ctx context.Context, projectSlug string, c
 	for _, e := range schema {
 		meta[e.Key] = e
 	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: begin transaction: %w", store.ErrStoreUnavailable, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	const q = `
 		INSERT INTO project_configs (project_slug, key, value, is_secret, category)
@@ -62,9 +68,13 @@ func (r *ConfigRepository) SaveConfig(ctx context.Context, projectSlug string, c
 		}
 		isSecret := entry.Category == domain.CategoryGeneratedSecret
 
-		if _, err := r.db.Exec(ctx, q, projectSlug, key, value, isSecret, catStr); err != nil {
+		if _, err := tx.Exec(ctx, q, projectSlug, key, value, isSecret, catStr); err != nil {
 			return mapPgError(err)
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: commit transaction: %w", store.ErrStoreUnavailable, err)
 	}
 	return nil
 }

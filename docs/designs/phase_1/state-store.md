@@ -482,6 +482,19 @@ type Store interface {
 
 ## 程式碼審查
 
-- **審查結果：** 待審查（store 層尚未實作）
-- **發現問題：** N/A（尚無程式碼）
-- **修正記錄：** N/A
+- **審查結果：** ✅ 通過（1 個 FIX_REQUIRED 已修正，0 個 SUGGESTION）
+- **審查範圍：** `internal/store/repository.go`、`internal/store/postgres/project_repo.go`、`internal/store/postgres/config_repo.go`、`internal/store/postgres/integration_test.go`
+- **commit：** 已在 fix commit 修正
+
+### FIX_REQUIRED（已修正）
+
+| # | 檔案 | 問題 | 修正方式 |
+|---|------|------|----------|
+| 1 | `config_repo.go` — `SaveConfig` | 94 個 INSERT 逐一執行，無 transaction 包覆。若第 N 筆失敗，前 N-1 筆已寫入，造成設定不一致狀態（與 `SaveOverrides`、`DeleteConfig` 的原子性行為不一致） | 將整個 key/value 迴圈包入 `tx.Begin` → `tx.Exec` × N → `tx.Commit`；`defer tx.Rollback` 同樣採用吞 error 模式 |
+
+### 其他觀察
+
+- **`repository.go`**：介面定義清晰，sentinel error 層級合理。
+- **`project_repo.go`**：`mapPgError` 正確處理 `pgconn.PgError`、`pgx.ErrNoRows`、context error；`DB` interface 滿足 pool/conn/tx 多種注入方式。
+- **`config_repo.go`**：`SaveOverrides` 與 `DeleteConfig` 原子性正確；`GetConfig` Overrides 欄位初始化為 `map[string]string{}`（非 nil）。
+- **`integration_test.go`**：`//go:build integration` tag 正確隔離；`DATABASE_URL` 未設定時 skip 行為合理。
