@@ -74,6 +74,10 @@ func ResolveConfig(
 		}
 	}
 
+	if portSet == nil {
+		return nil, &ErrInvalidPortSet{Key: "portSet"}
+	}
+
 	perProject := computePerProjectVars(project, portSet)
 
 	values := make(map[string]string, len(schema))

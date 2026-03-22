@@ -619,6 +619,9 @@ var ErrNoAvailablePort = errors.New("no available port")
 
 ## 程式碼審查
 
-- **審查結果：**
+- **審查結果：** PASS（修正後通過）
+- **審查時間：** Phase 1 domain layer 完成後
 - **發現問題：**
+  1. 🔴 **[FIX_REQUIRED — 已修正]** `ResolveConfig()` 對 `nil` portSet 未做防禦性檢查，直接傳入 `computePerProjectVars()` 後在 `ports.KongHTTP` 處引發 nil dereference panic。
 - **修正記錄：**
+  - `ResolveConfig()` 在 `computePerProjectVars()` 呼叫前加入 nil check：`if portSet == nil { return nil, &ErrInvalidPortSet{Key: "portSet"} }`

@@ -504,6 +504,11 @@ func (p *ProjectModel) CanRetryCreate() bool
 
 ## 程式碼審查
 
-- **審查結果：**
+- **審查結果：** PASS（修正後通過）
+- **審查時間：** Phase 1 domain layer 完成後
 - **發現問題：**
+  1. 🔴 **[FIX_REQUIRED — 已修正]** `StatusDestroying` 狀態孤立 — `validTransitions` 中缺少 `stopped/error → destroying → destroyed/error` 路徑。runtime-adapter.md 明確要求 `Destroy()` 前置條件包含 `destroying`（可重試語意），但舊的 state machine 完全沒有 `destroying` 的 entry，導致進入 `destroying` 後無法再轉換到任何狀態（dead-end）。
+  2. 🔴 **[FIX_REQUIRED — 已修正]** `CanDestroy()` 未包含 `StatusDestroying`，導致已在 `destroying` 狀態的重試呼叫被拒絕，與可重試語意矛盾。
 - **修正記錄：**
+  - `validTransitions` 新增：`stopped → destroying`、`error → destroying`、`destroying → destroyed`、`destroying → error`；移除舊的 `stopped → destroyed`（直接）和 `error → destroyed`（直接）路徑
+  - `CanDestroy()` 新增 `|| p.Status == StatusDestroying`

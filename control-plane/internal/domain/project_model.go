@@ -92,9 +92,9 @@ var validTransitions = map[ProjectStatus]map[ProjectStatus]bool{
 		StatusError:   true,
 	},
 	StatusStopped: {
-		StatusStarting:  true,
-		StatusDestroyed: true,
-		StatusError:     true,
+		StatusStarting:   true,
+		StatusDestroying: true,
+		StatusError:      true,
 	},
 	StatusStarting: {
 		StatusRunning: true,
@@ -108,11 +108,15 @@ var validTransitions = map[ProjectStatus]map[ProjectStatus]bool{
 		StatusStopped: true,
 		StatusError:   true,
 	},
-	StatusError: {
-		StatusCreating:  true, // only when PreviousStatus == creating
-		StatusStarting:  true, // only when PreviousStatus ∈ {starting, running, stopping}
+	StatusDestroying: {
 		StatusDestroyed: true,
-		StatusError:     true, // re-entry (no PreviousStatus update)
+		StatusError:     true,
+	},
+	StatusError: {
+		StatusCreating:   true, // only when PreviousStatus == creating
+		StatusStarting:   true, // only when PreviousStatus ∈ {starting, running, stopping}
+		StatusDestroying: true,
+		StatusError:      true, // re-entry (no PreviousStatus update)
 	},
 }
 
@@ -222,9 +226,10 @@ func (p *ProjectModel) CanStop() bool {
 	return p.Status == StatusRunning
 }
 
-// CanDestroy returns true if the project can be destroyed (stopped or error).
+// CanDestroy returns true if the project can be destroyed.
+// A project can be destroyed from stopped, error, or destroying (for retries).
 func (p *ProjectModel) CanDestroy() bool {
-	return p.Status == StatusStopped || p.Status == StatusError
+	return p.Status == StatusStopped || p.Status == StatusError || p.Status == StatusDestroying
 }
 
 // CanRetryCreate returns true if the project is in error and the previous status was creating.
