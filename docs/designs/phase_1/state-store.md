@@ -473,7 +473,7 @@ type Store interface {
 | 任務 ID | 檔案 | 說明 | 狀態 |
 |---------|------|------|------|
 | `store-interfaces` | `internal/store/repository.go` | `ProjectRepository` interface（Create, GetBySlug, List, UpdateStatus, Delete, SaveOverrides, GetOverrides）、`ConfigRepository` interface（SaveConfig, GetConfig）、`Store` interface（組合）、store sentinel errors（ErrProjectNotFound, ErrProjectAlreadyExists, ErrConfigNotFound, ErrStoreUnavailable） | ✅ done |
-| `migration-ddl` | `migrations/001_create_tables.sql` | `projects`、`project_configs`、`project_overrides` 資料表 + `updated_at` trigger + indexes + RLS policies；**修正 valid_status CHECK 加入 `destroying`** | [ ] pending |
+| `migration-ddl` | `migrations/001_create_tables.sql` | `projects`、`project_configs`、`project_overrides` 資料表 + `updated_at` trigger + indexes + RLS policies；**修正 valid_status CHECK 加入 `destroying`** | ✅ done |
 | `store-postgres-project` | `internal/store/postgres/project_repo.go` | `PostgresProjectRepository` 實作：Create, GetBySlug, List（含 status filter）, UpdateStatus, Delete, SaveOverrides, GetOverrides；PostgreSQL error code → store sentinel error 映射 | [ ] pending |
 | `store-postgres-config` | `internal/store/postgres/config_repo.go` | `PostgresConfigRepository` 實作：SaveConfig（DELETE+INSERT batch，正確設定 is_secret 與 category）, GetConfig（重建 ProjectConfig）；依賴 ConfigSchema() 取得每個 key 的 metadata | [ ] pending |
 | `test-store-integration` | `internal/store/postgres/integration_test.go` | ProjectRepository + ConfigRepository round-trip（存入再讀出，94 個 key 完整）；需要 DB 連線，以 `//go:build integration` build tag 控制 | [ ] pending |
