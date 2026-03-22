@@ -7,7 +7,7 @@
 
 ## 狀態
 
-revising（第二輪審查後修訂中）
+revising（第三輪審查後修訂完成）
 
 ## Phase
 
@@ -290,6 +290,7 @@ func (c *ProjectConfig) GetSensitive(key string) (string, bool)
 2. `portSet, err := ExtractPortSet(config)` — 從 Values 重建 PortSet
 3. `secrets := extractSecrets(config)` — 從 Values 萃取 GeneratedSecret 類別的 key-value（ConfigSchema() 提供分類資訊）
 4. `ResolveConfig(project, secrets, portSet, latestOverrides)` — 套用最新 overrides
+   （純載入場景：`latestOverrides = config.Overrides`；編輯場景：合併 `config.Overrides` 與新請求的覆寫值）
 
 此設計確保 JWT_SECRET 等 secrets 在服務重啟後不會被重新產生。
 
@@ -359,11 +360,26 @@ artifacts, err := renderer.Render(config)
 // ComputePerProjectVars 根據 ProjectModel 與 PortSet 計算所有 PerProject 分類的環境變數。
 // 回傳 key-value map，key 為環境變數名稱。
 // 此函數為 ResolveConfig 的 internal helper，一般情況下應透過 ResolveConfig 呼叫，不直接使用。
+// （Go 實作時應為 unexported：computePerProjectVars）
 func ComputePerProjectVars(project *ProjectModel, ports *PortSet) map[string]string
+
+// extractSecrets 從 ProjectConfig 的 Values 中萃取 GeneratedSecret 分類的 key-value。
+// 依賴 ConfigSchema() 取得每個 key 的 Category 分類資訊。
+// 為 ResolveConfig 的 internal helper（Go 實作時應為 unexported）。
+func extractSecrets(config *ProjectConfig) map[string]string
 
 // ExtractPortSet 從 ProjectConfig 的 Values 中重建 PortSet。
 // 用於載入已有專案時，從 ConfigRepository.GetConfig 的回傳值中萃取 port 資訊。
 // 若任何必要的 port key 遺失或值格式不正確，回傳 ErrInvalidPortSet。
+//
+// PortSet 欄位與 env var key 的對應關係（注意 IMGPROXY_BIND 需 strip ":" 前綴）：
+//   KongHTTP     ← Values["KONG_HTTP_PORT"]      格式：整數字串
+//   KongHTTPS    ← Values["KONG_HTTPS_PORT"]     格式：整數字串
+//   PostgresPort ← Values["POSTGRES_PORT"]       格式：整數字串
+//   PoolerPort   ← Values["POOLER_PROXY_PORT_TRANSACTION"] 格式：整數字串
+//   StudioPort   ← Values["STUDIO_PORT"]         格式：整數字串
+//   MetaPort     ← Values["PG_META_PORT"]        格式：整數字串
+//   ImgProxyPort ← Values["IMGPROXY_BIND"]       格式：":{port}"（需 strings.TrimPrefix(":")）
 func ExtractPortSet(config *ProjectConfig) (*PortSet, error)
 ```
 
@@ -428,6 +444,28 @@ type ErrMissingRequiredConfig struct {
 func (e *ErrMissingRequiredConfig) Error() string {
     return fmt.Sprintf("missing required config keys: %v", e.Keys)
 }
+
+// ErrConfigNotOverridable 在使用者嘗試覆寫非 UserOverridable 分類的 key 時回傳。
+type ErrConfigNotOverridable struct {
+    Key string
+}
+
+func (e *ErrConfigNotOverridable) Error() string {
+    return fmt.Sprintf("config key %q is not overridable", e.Key)
+}
+
+// ErrInvalidPortSet 在 ExtractPortSet 遇到遺失 key 或格式錯誤時回傳。
+type ErrInvalidPortSet struct {
+    Key   string // 遺失或格式錯誤的 env var key
+    Value string // 原始值（格式錯誤時）
+}
+
+func (e *ErrInvalidPortSet) Error() string {
+    if e.Value == "" {
+        return fmt.Sprintf("port key %q missing from config", e.Key)
+    }
+    return fmt.Sprintf("port key %q has invalid value %q", e.Key, e.Value)
+}
 ```
 
 ---
@@ -454,6 +492,8 @@ func (e *ErrMissingRequiredConfig) Error() string {
 | 單元測試 | ResolveConfig 合併邏輯 | domain |
 | 單元測試 | Secret 產生格式與長度 | domain |
 | 單元測試 | Port 分配邏輯 | domain |
+| 單元測試 | ExtractPortSet（含 IMGPROXY_BIND ":{port}" 格式、key 遺失邊界） | domain |
+| 整合測試 | SaveConfig / GetConfig round-trip（94 keys、is_secret 正確） | repository |
 
 ### Mock 策略
 
@@ -508,16 +548,33 @@ func (e *ErrMissingRequiredConfig) Error() string {
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ ✅ APPROVED（第三輪）
 - **第一輪意見（摘要）：** 6 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
   1. 🔴 **[已修正]** ComputePerProjectVars 三處流程矛盾 + 參數型別錯誤 → 採用方案 A，移除顯式呼叫步驟，統一流程
-  2. 🟡 **[已修正]** 載入流程 loadedPortSet 來源補充說明（參見 state-store.md）
+  2. 🟡 **[已修正]** 載入流程 loadedPortSet 來源補充說明
   3. 🟡 **[已修正]** DOCKER_SOCKET_LOCATION / STORAGE_TENANT_ID 分類說明補充
+- **第三輪意見（摘要）：**
+  - 所有前輪問題均已正確修復，架構設計健全。
+  - 🟡 **[已修正]** ComputePerProjectVars 應為 unexported → 文件標注 Go 實作應用 lowercase
+  - 🟡 **[已修正]** extractSecrets 缺少正式簽名 → 補充函數定義
+  - 🟡 **[已修正]** latestOverrides 來源說明 → 補充純載入 vs 編輯場景
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ 🔁 REVISE（第三輪）
+- **第一輪意見（摘要）：** 3 個阻斷性問題，全部已解決。
+- **第二輪意見（摘要）：**
+  1. 🔴 **[已修正]** 載入流程 loadedPortSet 來源不明 → 加入 ExtractPortSet() 函數
+  2. 🔴 **[已修正]** ComputePerProjectVars 流程矛盾（與 Reviewer A 一致）
+  3. 🔴 **[已修正]** SaveConfig 隱式依賴 ConfigSchema() → 加入實作注意說明
+  4. 🟡 **[已修正]** 測試策略補充 round-trip、ExtractPortSet 邊界案例
+- **第三輪意見（摘要）：**
+  1. 🔴 **[已修正]** ExtractPortSet IMGPROXY_BIND ":{port}" 格式陷阱 → 加入完整欄位對應表含格式說明
+  2. 🟡 **[已修正]** ErrInvalidPortSet / ErrConfigNotOverridable struct 定義補全
+  3. 🟡 **[已修正]** latestOverrides 來源說明（與 Reviewer A 一致）
+  4. 🟡 **[已修正]** extractSecrets 正式簽名
+  5. 🟡 **[已修正]** 測試類型分配表補充 ExtractPortSet + SaveConfig round-trip
 - **第一輪意見（摘要）：** 3 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
   1. 🔴 **[已修正]** 載入流程 loadedPortSet 來源不明 → 加入 ExtractPortSet() 函數，補充載入流程步驟

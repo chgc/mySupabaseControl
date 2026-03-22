@@ -7,7 +7,7 @@
 
 ## 狀態
 
-revising（第二輪審查後修訂中）
+revising（第三輪審查後修訂完成）
 
 ## Phase
 
@@ -190,6 +190,7 @@ type ProjectRepository interface {
 
     // GetBySlug 以 slug 查詢專案。
     // 若不存在，回傳 ErrProjectNotFound。
+    // 對 status = 'destroyed' 的專案**正常回傳資料**，不回傳 ErrProjectNotFound。
     // Health 欄位為 runtime-only，GetBySlug 回傳的 ProjectModel.Health 固定為 nil，
     // 由 runtime adapter 在查詢後填充（不持久化至 DB）。
     // 注意：DB 中 previous_status 的 NULL 值，在回傳的 ProjectModel 中
@@ -205,15 +206,18 @@ type ProjectRepository interface {
     List(ctx context.Context, filters ...ListFilter) ([]*ProjectModel, error)
 
     // UpdateStatus 更新專案狀態與 previous_status。
+    // 若 slug 不存在（rows affected = 0），回傳 ErrProjectNotFound。
     // lastError 僅在 status 為 StatusError 時有意義；
-    // 其他狀態下傳入空字串，實作應清空 DB 中的 last_error 欄位。
+    // 其他狀態下傳入空字串，實作應使用 NULLIF($4, '') 清空 DB 中的 last_error 欄位。
     // previousStatus 為更新前的狀態（通常從 ProjectModel.Status 讀取）。
-    // DB 儲存映射：Go 零值 "" 映射為 SQL NULL（代表專案尚未進入 error 狀態）。
-    // 實作應使用 NULLIF($3, '') 將空字串轉為 NULL。
+    // 若為首次狀態轉換（無前一狀態），傳入零值 ""，實作應使用 NULLIF($3, '') 儲存為 NULL。
+    // 注意：若 domain 層已在 error 狀態再次呼叫（error→error），呼叫端應傳入原有的
+    // PreviousStatus（而非當前 Status），以避免覆寫診斷資訊。此為 domain 層責任，DB 層不做 guard。
     // 在更新前不在此層驗證狀態轉換合法性（此為 domain 層職責）。
     UpdateStatus(ctx context.Context, slug string, status, previousStatus ProjectStatus, lastError string) error
 
     // Delete 將專案標記為 destroyed（soft delete）。
+    // 若 slug 不存在（rows affected = 0），回傳 ErrProjectNotFound。
     Delete(ctx context.Context, slug string) error
 
     // Exists 檢查 slug 是否已存在。
@@ -255,6 +259,7 @@ type ConfigRepository interface {
     GetConfig(ctx context.Context, projectSlug string) (*ProjectConfig, error)
 
     // SaveOverrides 全量替換此專案的 overrides（先 DELETE 再 INSERT）。
+    // 實作必須在單一 DB transaction（或等效原子操作）中執行，避免 partial write。
     // 若需合併（per-key UPSERT），呼叫端應先 GetOverrides 再合併後呼叫 SaveOverrides。
     SaveOverrides(ctx context.Context, projectSlug string, overrides map[string]string) error
 
@@ -322,7 +327,7 @@ type Store interface {
 
 | 情境 | 處理方式 | 回應格式 |
 |------|---------|---------|
-| 專案不存在 | 回傳 `ErrProjectNotFound` | `{ "error": "not_found" }` |
+| 專案不存在（GetBySlug/Delete/UpdateStatus 0 rows） | 回傳 `ErrProjectNotFound` | `{ "error": "not_found" }` |
 | Slug 重複 | 回傳 `ErrProjectAlreadyExists`（由 DB PK 約束捕捉） | `{ "error": "project_exists" }` |
 | DB 連線失敗 | 包裝為 `ErrStoreUnavailable` | `{ "error": "store_unavailable" }` |
 | 不合法的 status 字串值 | 由 DB CHECK 約束捕捉，包裝為 `ErrStoreInternal` | `{ "error": "store_internal" }` |
@@ -417,7 +422,7 @@ type Store interface {
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ ✅ APPROVED（第三輪）
 - **第一輪意見（摘要）：** 4 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
   1. 🔴 **[已修正]** DeleteConfig godoc 與 Delete 流程矛盾 → 明確為管理操作，正常 destroy 不呼叫
@@ -425,16 +430,27 @@ type Store interface {
   3. 🟡 **[已修正]** SaveOverrides 語意說明（全量替換）
   4. 🟡 **[已修正]** UpdateStatus stale read 風險補充到待決問題
   5. 🟡 **[已修正]** List 排序說明
+- **第三輪意見（摘要）：**
+  - 所有前輪問題均已正確修復，架構設計健全。
+  - 🟡 **[已修正]** UpdateStatus previousStatus godoc "代表尚未進入 error" → 改為 "首次轉換無前一狀態"
+  - 🟡 **[已修正]** Delete godoc 補充 0 rows → ErrProjectNotFound
+  - 🟡 **[已修正]** WithStatus multiple filter 行為說明（last-write-wins）
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ 🔁 REVISE（第三輪）
 - **第一輪意見（摘要）：** 4 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
   1. 🔴 **[已修正]** DeleteConfig godoc 矛盾（與 Reviewer A 一致）
   2. 🔴 **[已修正]** List 排除 destroyed vs WithStatus(StatusDestroyed) 語意歧義 → 明確說明 filter override 邏輯
   3. 🟡 **[已修正]** 測試策略補充 previous_status 持久化案例
   4. 🟡 **[已修正]** NULLIF SQL 範例補充
+- **第三輪意見（摘要）：**
+  1. 🔴 **[已修正]** UpdateStatus 0 rows → ErrProjectNotFound 未定義 → godoc + 錯誤表補充
+  2. 🔴 **[已修正]** SaveOverrides 無原子性保證 → 加入 transaction 要求
+  3. 🟡 **[已修正]** error→error previousStatus domain 責任說明
+  4. 🟡 **[已修正]** Delete SQL 完整範例
+  5. 🟡 **[已修正]** GetBySlug destroyed 專案行為說明
 
 ---
 
