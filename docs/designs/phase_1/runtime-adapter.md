@@ -221,8 +221,16 @@ func (s *ProjectService) CreateProject(ctx context.Context, slug, displayName st
         return nil, err
     }
 
-    // 3. 產生設定
-    config, err := ResolveConfig(project, overrides)
+    // 3. 產生設定（完整簽名：需先產生 secrets 與分配 ports）
+    secrets, err := GenerateProjectSecrets(generator)
+    if err != nil {
+        return nil, err
+    }
+    portSet, err := portAllocator.AllocatePorts(ctx)
+    if err != nil {
+        return nil, err
+    }
+    config, err := ResolveConfig(project, secrets, portSet, overrides)
     if err != nil {
         return nil, err
     }
