@@ -103,7 +103,7 @@ revising（第四輪審查後修訂完成）
 | 環境變數 | 計算規則 | 使用服務 | 說明 |
 |---------|---------|---------|------|
 | `KONG_HTTP_PORT` | 自動分配（起始 28081） | kong | 對外 API port |
-| `KONG_HTTPS_PORT` | `KONG_HTTP_PORT + 1` | kong | 對外 HTTPS port |
+| `KONG_HTTPS_PORT` | `KONG_HTTP_PORT + 1`（衍生，不在 PortSet 中） | kong | 對外 HTTPS port |
 | `POSTGRES_PORT` | 自動分配（起始 54320） | db, supavisor, 所有 DB 連線 | PostgreSQL port |
 | `POOLER_PROXY_PORT_TRANSACTION` | 自動分配（起始 64300） | supavisor | 連線池 port |
 | `API_EXTERNAL_URL` | `http://localhost:${KONG_HTTP_PORT}` | auth | 對外 API URL |
@@ -256,6 +256,8 @@ type ProjectConfig struct {
 // 優先順序：使用者覆寫 > 每專案計算值 > 產生的 secret > 靜態預設值
 // secrets：由 GenerateProjectSecrets 產生（新建專案）或從 ConfigRepository 載入（已有專案）
 // portSet：由 PortAllocator 分配（新建專案）或從 ConfigRepository 載入（已有專案）
+// 若 overrides 中有任何 key 的 Category 不是 UserOverridable，回傳 ErrConfigNotOverridable。
+// 若必要的 key 遺漏，回傳 ErrMissingRequiredConfig。
 func ResolveConfig(
     project *ProjectModel,
     secrets map[string]string,
@@ -349,7 +351,7 @@ secrets, err := GenerateProjectSecrets(generator)
 // 3. 分配 ports（僅新建專案；載入已有專案時從 ProjectConfig 萃取）
 portSet, err := portAllocator.AllocatePorts(ctx)
 
-// 4. 合併所有設定值（ResolveConfig 內部呼叫 ComputePerProjectVars）
+// 4. 合併所有設定值（ResolveConfig 內部呼叫 computePerProjectVars）
 config, err := ResolveConfig(project, secrets, portSet, userOverrides)
 
 // 5. 渲染為 runtime artifacts
@@ -357,11 +359,11 @@ artifacts, err := renderer.Render(config)
 ```
 
 ```go
-// ComputePerProjectVars 根據 ProjectModel 與 PortSet 計算所有 PerProject 分類的環境變數。
+// computePerProjectVars 根據 ProjectModel 與 PortSet 計算所有 PerProject 分類的環境變數。
 // 回傳 key-value map，key 為環境變數名稱。
-// 此函數為 ResolveConfig 的 internal helper，一般情況下應透過 ResolveConfig 呼叫，不直接使用。
-// （Go 實作時應為 unexported：computePerProjectVars）
-func ComputePerProjectVars(project *ProjectModel, ports *PortSet) map[string]string
+// 此函數為 ResolveConfig 的 internal helper，外部呼叫端應透過 ResolveConfig 取得結果。
+// 注意：KONG_HTTPS_PORT = KongHTTP + 1，為衍生值，由此函數計算，不從 PortSet 讀取。
+func computePerProjectVars(project *ProjectModel, ports *PortSet) map[string]string
 
 // extractSecrets 從 ProjectConfig 的 Values 中萃取 GeneratedSecret 分類的 key-value。
 // 依賴 ConfigSchema() 取得每個 key 的 Category 分類資訊。
@@ -373,13 +375,13 @@ func extractSecrets(config *ProjectConfig) map[string]string
 // 若任何必要的 port key 遺失或值格式不正確，回傳 ErrInvalidPortSet。
 //
 // PortSet 欄位與 env var key 的對應關係（注意 IMGPROXY_BIND 需 strip ":" 前綴）：
-//   KongHTTP     ← Values["KONG_HTTP_PORT"]      格式：整數字串
-//   KongHTTPS    ← Values["KONG_HTTPS_PORT"]     格式：整數字串
-//   PostgresPort ← Values["POSTGRES_PORT"]       格式：整數字串
-//   PoolerPort   ← Values["POOLER_PROXY_PORT_TRANSACTION"] 格式：整數字串
-//   StudioPort   ← Values["STUDIO_PORT"]         格式：整數字串
-//   MetaPort     ← Values["PG_META_PORT"]        格式：整數字串
-//   ImgProxyPort ← Values["IMGPROXY_BIND"]       格式：":{port}"（需 strings.TrimPrefix(":")）
+//   KongHTTP     ← Values["KONG_HTTP_PORT"]                  格式：整數字串
+//   PostgresPort ← Values["POSTGRES_PORT"]                   格式：整數字串
+//   PoolerPort   ← Values["POOLER_PROXY_PORT_TRANSACTION"]   格式：整數字串
+//   StudioPort   ← Values["STUDIO_PORT"]                     格式：整數字串
+//   MetaPort     ← Values["PG_META_PORT"]                    格式：整數字串
+//   ImgProxyPort ← Values["IMGPROXY_BIND"]                   格式：":{port}"（需 strings.TrimPrefix(":")）
+// 注意：KONG_HTTPS_PORT 不在 PortSet 中（衍生值），ExtractPortSet 不讀取此 key。
 func ExtractPortSet(config *ProjectConfig) (*PortSet, error)
 ```
 
@@ -412,9 +414,10 @@ type PortAllocator interface {
 // 避免多個並發的「建立專案」請求分配到相同的 port。
 
 // PortSet 包含一個專案所需的所有 port。
+// 注意：KONG_HTTPS_PORT 不在此結構中，因為它是衍生值（= KongHTTP + 1），
+// 由 computePerProjectVars 計算，不需要獨立分配或儲存。
 type PortSet struct {
     KongHTTP       int // 對外 API port（起始 28081）
-    KongHTTPS      int // 對外 HTTPS port（KongHTTP + 1）
     PostgresPort   int // PostgreSQL port（起始 54320）
     PoolerPort     int // Supavisor transaction port（起始 64300）
     StudioPort     int // Studio UI port（起始 54323）
@@ -586,20 +589,26 @@ var ErrNoAvailablePort = errors.New("no available port")
   3. 🔴 **[已修正]** SaveConfig 隱式依賴 ConfigSchema() → 加入實作注意說明
   4. 🟡 **[已修正]** 測試策略補充 round-trip、ExtractPortSet 邊界案例
 
-**第四輪審查結果（兩位審查者）：**
+**第五輪審查結果（兩位審查者）：**
 
-**Reviewer A（架構）— 🔁 REVISE**（基於舊版文件內容，實際文件已符合要求）
-> 注意：Reviewer A 的第四輪審查使用了較舊的文件摘要版本（非現有實際文件）。
-> 其所指出的兩個「問題」在實際文件中並不存在：
-> - 🔴 STUDIO_PORT / PG_META_PORT 不在 PerProject → 實際文件第 118-119 行已包含
-> - 🔴 StaticDefault / UserOverridable 重複計算 → 實際文件分類明確，無重複
-> 以下已修正之建議亦基於真實文件狀態：
-> - 🟡 **[已修正]** AllocatePorts() 缺少 ctx → 補充 `ctx context.Context` 參數
+**Reviewer A（架構）— 🔁 REVISE（第五輪）**
+> 注意：Reviewer A 第五輪部分 blockers 為 prompt omission（實際文件已有正確內容）：
+> - 🔴 B1 SUPABASE_PUBLIC_URL 無公式 → 實際文件有明確公式（`http://localhost:${KONG_HTTP_PORT}`），prompt 摘要省略
+> - 🔴 B2 DB_AFTER_CONNECT_QUERY 用底線表示空格 → 實際文件有正確字串，prompt 摘要失真
+> - 🔴 B4 Artifact 未定義 → 實際文件第 300 行已定義，prompt 省略該段
+>
+> 真正需修正的 blockers：
+> - 🔴 B3 **[已修正]** ErrConfigNotOverridable 無 callsite → ResolveConfig godoc 補充回傳此錯誤的條件
+> - 🔴 B5 **[已修正]** ComputePerProjectVars 大小寫矛盾 → 統一改為 lowercase `computePerProjectVars`（含流程說明中的引用）
 
-**Reviewer B（實作）— 🔁 REVISE（第四輪）**
-1. 🔴 **[已修正]** AllocatePorts() 缺少 `ctx context.Context` → 會導致 DB 鎖無法超時、goroutine 洩漏
-2. 🟡 **[已修正]** ErrNoAvailablePort 無 Go 定義 → 補充 `var ErrNoAvailablePort = errors.New(...)`
-3. 🟡 **[已修正]** 建立流程步驟 4（驗證）說明模糊 → 明確標注驗證由 ResolveConfig 內部執行
+**Reviewer B（實作）— 🔁 REVISE（第五輪）**
+> 注意：Reviewer B 第五輪部分 blockers 為 prompt omission（實際文件已有正確內容）：
+> - 🔴 B1 Artifact 未定義 → 實際文件第 300 行已定義，prompt 省略該段
+> - 🔴 B2 GetConfig not-found → 定義在 state-store.md（已 approved），非 config-schema 範圍
+>
+> 真正需修正的 blockers：
+> - 🔴 B3 **[已修正]** ResolveConfig godoc 未說明回傳 ErrConfigNotOverridable → 補充條件說明
+> - 🔴 B4 **[已修正]** KongHTTPS 矛盾：catalog 定義為衍生（HTTP+1）但 PortSet 含獨立欄位 → 移除 KongHTTPS 欄位，在 computePerProjectVars 中衍生，ExtractPortSet 不讀取此 key
 
 ---
 
