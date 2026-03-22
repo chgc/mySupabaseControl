@@ -128,7 +128,7 @@ Phase 1 完成後，系統應具備：
 
 | 任務 ID | 說明 | 狀態 |
 |---------|------|------|
-| `store-interfaces` | `ProjectRepository`、`ConfigRepository`、`Store` interface、store errors | [ ] pending |
+| `store-interfaces` | `ProjectRepository`、`ConfigRepository`、`Store` interface、store errors | ✅ done |
 | `migration-ddl` | SQL migration（3 張資料表 + triggers + indexes + RLS；修正 `destroying` bug） | [ ] pending |
 | `store-postgres-project` | PostgreSQL `ProjectRepository` 實作 | [ ] pending |
 | `store-postgres-config` | PostgreSQL `ConfigRepository` 實作 | [ ] pending |
