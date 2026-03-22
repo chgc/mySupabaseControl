@@ -7,7 +7,7 @@
 
 ## 狀態
 
-design_complete（第二輪審查修訂完成）
+design_complete（第三輪審查修訂完成）
 
 ## Phase
 
@@ -293,7 +293,9 @@ var (
 func NewProject(slug, displayName string) (*ProjectModel, error)
 
 // TransitionTo 嘗試將專案狀態轉換至 target。
-// 成功時修改 Status 與 UpdatedAt；若目標為 StatusError，同時將當前 Status 寫入 PreviousStatus。
+// 成功時修改 Status 與 UpdatedAt。
+// PreviousStatus 更新條件：target == StatusError **且** 當前 Status != StatusError
+// （即 error→error 路徑不覆寫 PreviousStatus，與 SetError 行為一致）。
 // 若 target == StatusError，應優先使用 SetError 以確保 LastError 同步更新。
 // 直接呼叫 TransitionTo(StatusError) 仍為合法，但 LastError 不會被更新。
 // 若轉換不合法，回傳 *TransitionError（可用 errors.Is(err, ErrInvalidTransition) 或
@@ -302,6 +304,7 @@ func (p *ProjectModel) TransitionTo(target ProjectStatus) error
 
 // SetError 將專案轉入 error 狀態並記錄錯誤訊息（SetError 是進入 error 狀態的正規路徑）。
 // 若當前狀態已是 error（e.g. 二次崩潰），則僅更新 LastError 與 UpdatedAt，不修改 PreviousStatus。
+// 若當前狀態不允許進入 error（e.g. destroyed），回傳 *TransitionError；其餘情況回傳 nil。
 // 從 error 恢復後，LastError 保留原值，不自動清空。
 func (p *ProjectModel) SetError(reason string) error
 
@@ -351,7 +354,7 @@ func (p *ProjectModel) CanRetryCreate() bool
 
 1. 呼叫 `project.TransitionTo(target)` 或 `project.SetError(reason)`
 2. 查詢狀態機轉換表，若不合法回傳 `*TransitionError`
-3. 若合法，更新 `Status` 與 `UpdatedAt`；若目標為 `error`，同時將當前 `Status` 寫入 `PreviousStatus`
+3. 若合法，更新 `Status` 與 `UpdatedAt`；若目標為 `error` 且當前狀態不是 `error`，將當前 `Status` 寫入 `PreviousStatus`
 4. 持久化至 state store
 
 ---
@@ -377,7 +380,8 @@ func (p *ProjectModel) CanRetryCreate() bool
 - Slug 正規化：空格轉換、大寫轉小寫、非法字元移除、連續連字號合併、截斷後結尾連字號移除、正規化後過短（回傳 `ErrCannotNormalize`）、全部非法字元輸入
 - 狀態機轉換：所有合法轉換（含 `error → creating` 與 `error → starting` 的 `PreviousStatus` 條件，以及 `error → error` 二次崩潰）、所有不合法轉換
 - `TransitionError` error 語意：`errors.Is(err, ErrInvalidTransition)` 為 true；`errors.As(err, &te)` 能取得 `From`/`To`；`Error()` 字串格式
-- `SetError`：狀態轉為 `error`、`PreviousStatus` 寫入正確、`LastError` 記錄訊息；已在 error 時僅更新 `LastError` 不更動 `PreviousStatus`
+- `SetError`：狀態轉為 `error`、`PreviousStatus` 寫入正確、`LastError` 記錄訊息；已在 error 時僅更新 `LastError` 不更動 `PreviousStatus`；在 `destroyed` 等不可進入 error 的狀態下回傳 `*TransitionError`；error 恢復後 `LastError` 保留原值
+- `TransitionTo(StatusError)` 在已為 error 狀態時：`PreviousStatus` 不被覆寫（與 `SetError` 行為一致）
 - `NewProject`：正常建立（`Status == creating`、時間戳由函式設定）、空 slug、空 displayName（含純空白）、displayName trim 後超過 100 rune
 - `CanStart/CanStop/CanDestroy/CanRetryCreate/IsTerminal`：各 status 的回傳值（見介面合約表格）
 - `ProjectHealth.IsHealthy()`：全部 healthy 回傳 true、任一 unhealthy 回傳 false、Services 為空回傳 false、**h == nil 回傳 false**
@@ -436,7 +440,7 @@ func (p *ProjectModel) CanRetryCreate() bool
 ## 待決問題
 
 - ✅ Slug 最大長度 40：已確認。Docker Compose project name 上限為 255 字元，40 字元完全足夠。
-- ✅ Soft delete vs hard delete：確定使用 soft delete（`destroyed` 狀態保留記錄），與 state-store.md 設計一致。
+- ✅ Soft delete vs hard delete：確定使用 soft delete（`destroyed` 狀態保留記錄），與 state-store.md 設計一致。`destroyed` 狀態的 slug **不可被新專案復用**（`ErrProjectAlreadyExists` 涵蓋 destroyed 記錄）；如需復用，須先由系統管理員手動清除。
 - ✅ `LastError` 欄位：已加入 `ProjectModel`，與 state-store DB schema 的 `last_error TEXT` 欄位對應。
 - ✅ `error` 恢復路徑歧義：已加入 `PreviousStatus` 欄位並更新狀態機轉換規則，由 `ValidTransition` 使用 `PreviousStatus` 判斷。
 
@@ -446,26 +450,32 @@ func (p *ProjectModel) CanRetryCreate() bool
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪，2025-07-14）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ ✅ APPROVED（第三輪）
 - **第一輪意見（摘要）：** 3 個阻斷性問題（TransitionError 語意、PreviousStatus 欄位缺失、LastError 欄位缺失）+ 7 個建議修正，全部已解決。
 - **第二輪意見（摘要）：**
-  1. 🔴 **[已修正]** `IsHealthy()` nil receiver 未處理 → 合約加入「h == nil → false」，測試策略補充案例
-  2. 🔴 **[已修正]** 缺少 `CanRetryCreate()` helper，破壞封裝 → 加入方法、更新狀態表格與測試策略
-  3. 🟡 **[已修正]** `SetError` 在已為 error 狀態時行為未定義 → 合約明確說明二次崩潰行為
-  4. 🟡 **[已修正]** `DisplayName` 空白字元行為未定義 → 明確說明 trim 後驗證，100 rune 限制
+  1. 🔴 **[已修正]** `IsHealthy()` nil receiver 未處理
+  2. 🔴 **[已修正]** 缺少 `CanRetryCreate()` helper
+  3. 🟡 **[已修正]** `SetError` 二次崩潰行為未定義
+  4. 🟡 **[已修正]** `DisplayName` 空白字元與 100 rune 限制
+- **第三輪意見（摘要）：**
+  - 所有前輪問題均已正確修復。
+  - O1 **[已修正]**：soft delete 政策補充（`destroyed` slug 不可復用）
+  - O2 **[已修正]**：`SetError` 失敗語意補充（不可進入 error 時回傳 `*TransitionError`）
+  - O3–O5：低優先度建議，不阻擋進入實作。
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪，2025-07-14）
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）→ 🔁 REVISE（第三輪）
 - **第一輪意見（摘要）：** 3 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
-  1. 🔴 **[已修正]** `TransitionTo` 注解矛盾（「lastError 由呼叫端傳入」與簽名不符）→ 移除矛盾注解，改為說明 SetError 為正規路徑
-  2. 🟡 **[已修正]** `SetError` 與 `TransitionTo(StatusError)` 邊界 → 明確說明兩者差異及 LastError 行為
-  3. 🟡 **[已修正]** `error → error` 二次崩潰未定義 → 加入狀態機表格，`SetError` 合約補充
-  4. 🟡 **[已修正]** `DisplayName` 100 字元 byte vs rune → 明確改為 100 rune
-  5. 🔵 **[已修正]** 執行流程缺 PreviousStatus 更新說明 → 補充至 Step 3
-  6. 🔵 **[已修正]** `TransitionTo` 注解暗示 PreviousStatus 每次更新 → 修正措辭
-  7. 🔵 **[已修正]** error 恢復後 LastError 是否清空 → 明確說明保留原值
+  1. 🔴 **[已修正]** `TransitionTo` 注解矛盾（「lastError 由呼叫端傳入」與簽名不符）
+  2. 🟡 **[已修正]** `SetError` 與 `TransitionTo(StatusError)` 邊界
+  3. 🟡 **[已修正]** `error → error` 二次崩潰未定義
+  4. 🟡 **[已修正]** `DisplayName` 100 byte vs rune
+  5–7. 🔵 **[已修正]** 執行流程與合約措辭細節
+- **第三輪意見（摘要）：**
+  1. 🔴 **[已修正]** `TransitionTo(StatusError)` 在已為 error 時會污染 `PreviousStatus` → `TransitionTo` 合約明確：「target==StatusError 且當前狀態已是 error 時，不更新 PreviousStatus」；執行流程 Step 3 同步修正
+  2. 🟡 **[已修正]** 測試策略補充：`TransitionTo(StatusError) from error → PreviousStatus 不被覆寫`
 
 ---
 
