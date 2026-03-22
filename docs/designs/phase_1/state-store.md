@@ -7,7 +7,7 @@
 
 ## 狀態
 
-revising（第四輪審查後修訂完成）
+approved（五輪審查通過）
 
 ## Phase
 
@@ -458,6 +458,11 @@ type Store interface {
   5. 🟡 **[已修正]** GetBySlug destroyed 專案行為說明
 - **第四輪意見（摘要）：**
   1. 🔴 **[已修正]** SaveOverrides 空 map → 無效 SQL（`INSERT ... VALUES` 無 rows） → godoc 明確：empty map 僅執行 DELETE，跳過 INSERT
+- **第五輪意見（摘要）：**
+  - ✅ APPROVED（Reviewer A）：SaveOverrides 空 map 修正正確，無新問題。
+  - ✅ APPROVED（Reviewer B）：所有介面合約驗證通過，empty-map path + transaction 保證完整。
+  - 🟡 建議（non-blocking）：SaveOverrides 非存在 slug → FK violation 未包裝為 sentinel，建議文件說明 domain 層需確保專案存在
+  - 🟡 建議（non-blocking）：UpdateStatus 可更新 destroyed 專案，建議加注解說明 domain 層負責狀態 guard
 
 ---
 
