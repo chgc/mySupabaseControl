@@ -613,7 +613,7 @@ var ErrNoAvailablePort = errors.New("no available port")
 | `domain-project-config` | `project_config.go` | `ProjectConfig` struct、`Get()`、`GetSensitive()`、`ResolveConfig(project, secrets, portSet, overrides)`、`computePerProjectVars()`（internal）、`ExtractSecrets()`（exported）、`ExtractPortSet()` | ✅ done |
 | `test-config-schema` | `config_schema_test.go` | ConfigSchema() 完整性：共 94 個 key、無重複 key、各分類數量正確（36+16+12+30） | ✅ done |
 | `test-project-config` | `project_config_test.go` | ResolveConfig() 優先順序（覆寫 > PerProject > Secret > 預設值）、`ErrConfigNotOverridable`、`ErrMissingRequiredConfig`、`ExtractPortSet()`（含 IMGPROXY_BIND `:{port}` 格式、key 遺失邊界） | ✅ done |
-| `test-secret-gen` | `secret_test.go` | hex/alphanumeric 長度與格式、`ANON_KEY` 為合法 JWT（3 段 base64）、`SERVICE_ROLE_KEY` role claim 正確 | [ ] pending |
+| `test-secret-gen` | `secret_test.go` | hex/alphanumeric 長度與格式、`ANON_KEY` 為合法 JWT（3 段 base64）、`SERVICE_ROLE_KEY` role claim 正確 | ✅ done |
 
 ---
 
