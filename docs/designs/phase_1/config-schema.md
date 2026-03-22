@@ -600,7 +600,20 @@ var ErrNoAvailablePort = errors.New("no available port")
 
 ## 任務
 
-<!-- 待審查通過後展開 -->
+> 審查通過後展開。所有任務均在 `control-plane/internal/domain/` 下實作。
+
+| 任務 ID | 檔案 | 說明 | 狀態 |
+|---------|------|------|------|
+| `domain-config-types` | `config_types.go` | `ConfigCategory`（4 個常數）、`ConfigScope`（2 個常數）、`ConfigEntry` struct、`PortSet` struct（6 欄位，不含 KONG_HTTPS_PORT） | ✅ done |
+| `domain-errors` | `errors.go` | `ErrMissingRequiredConfig`（struct，含 `Keys []string`）、`ErrConfigNotOverridable`（struct，含 `Key string`）、`ErrInvalidPortSet`（struct，含 `Key`、`Value`）、`ErrNoAvailablePort`（sentinel） | ✅ done |
+| `domain-port-allocator` | `port_allocator.go` | `PortAllocator` interface（`AllocatePorts(ctx) (*PortSet, error)`） | ✅ done |
+| `domain-renderer` | `renderer.go` | `Artifact` struct（Path, Content, Mode）、`ConfigRenderer` interface（`Render(*ProjectConfig) ([]Artifact, error)`） | ✅ done |
+| `domain-secret-gen` | `secret.go` | `SecretGenerator` interface（RandomHex, RandomAlphanumeric, GenerateJWT）、`cryptoSecretGenerator` 實作、`NewSecretGenerator()`、`GenerateProjectSecrets(gen)` | 🔄 in_progress |
+| `domain-config-schema` | `config_schema.go` | `ConfigSchema() []ConfigEntry` — 全部 94 個環境變數（StaticDefault×36, PerProject×16, GeneratedSecret×12, UserOverridable×30） | 🔄 in_progress |
+| `domain-project-config` | `project_config.go` | `ProjectConfig` struct、`Get()`、`GetSensitive()`、`ResolveConfig(project, secrets, portSet, overrides)`、`computePerProjectVars()`（internal）、`extractSecrets()`（internal）、`ExtractPortSet()` | [ ] pending |
+| `test-config-schema` | `config_schema_test.go` | ConfigSchema() 完整性：共 94 個 key、無重複 key、各分類數量正確（36+16+12+30） | [ ] pending |
+| `test-project-config` | `project_config_test.go` | ResolveConfig() 優先順序（覆寫 > PerProject > Secret > 預設值）、`ErrConfigNotOverridable`、`ErrMissingRequiredConfig`、`ExtractPortSet()`（含 IMGPROXY_BIND `:{port}` 格式、key 遺失邊界） | [ ] pending |
+| `test-secret-gen` | `secret_test.go` | hex/alphanumeric 長度與格式、`ANON_KEY` 為合法 JWT（3 段 base64）、`SERVICE_ROLE_KEY` role claim 正確 | [ ] pending |
 
 ---
 

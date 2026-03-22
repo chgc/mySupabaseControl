@@ -490,7 +490,15 @@ func (p *ProjectModel) CanRetryCreate() bool
 
 ## 任務
 
-<!-- 待審查通過後展開 -->
+> 審查通過後展開。所有任務均在 `control-plane/internal/domain/` 下實作。
+
+| 任務 ID | 檔案 | 說明 | 狀態 |
+|---------|------|------|------|
+| `domain-service-name` | `service_name.go` | `ServiceName` type + 13 個常數（db, auth, rest, realtime, storage, imgproxy, kong, meta, functions, analytics, supavisor, studio, vector） | ✅ done |
+| `domain-project-status` | `project_status.go` | `ProjectStatus` type + 8 個常數（creating, stopped, starting, running, stopping, destroying, destroyed, error） | ✅ done |
+| `domain-project-health` | `project_health.go` | `ServiceStatus`（5 個常數）、`ServiceHealth` struct、`ProjectHealth` struct、`IsHealthy() bool`、`AllServices() []ServiceName` | ✅ done |
+| `domain-project-model` | `project_model.go` | `ProjectModel` struct、`NewProject()`、`TransitionTo()`、`SetError()`、`ValidateSlug()`、`NormalizeSlug()`、`IsReservedSlug()`、`TransitionError`、`ValidTransition()` | ✅ done |
+| `test-project-model` | `project_model_test.go` | Table-driven 測試：`TransitionTo()` 合法/非法轉換、`SetError()` 語意、`ValidateSlug()` 邊界、`IsHealthy()` nil/空 map | [ ] pending |
 
 ---
 
