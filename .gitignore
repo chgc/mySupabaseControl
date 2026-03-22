@@ -1,2 +1,4 @@
 .env
 volumes/
+projects/*/.env
+projects/*/volumes/

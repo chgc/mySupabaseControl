@@ -1,0 +1,12 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^pwsh -NoProfile -File \\./scripts/new-project\\.ps1 -Project \"XPlat Demo\" -KongHttpPort 28091 -PostgresPort 55432 -PoolerTransactionPort 66543$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^pwsh -NoProfile -File \\./scripts/new-project\\.ps1 -Project \"XPlat Demo\" -KongHttpPort 28091 -PostgresPort 55432 -PoolerTransactionPort 6544$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
