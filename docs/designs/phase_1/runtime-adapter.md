@@ -194,7 +194,7 @@ type GlobalServiceManager interface {
 }
 
 type GlobalHealth struct {
-    Services map[string]ServiceHealth
+    Services map[ServiceName]ServiceHealth
     CheckedAt time.Time
 }
 ```
