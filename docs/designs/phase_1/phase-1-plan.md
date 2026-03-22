@@ -70,11 +70,78 @@ Phase 1 完成後，系統應具備：
 
 ## 退出標準
 
-- [ ] 所有功能的設計文件狀態為 `approved`（通過兩位 reviewer 審查）
-- [ ] 所有功能的任務在 SQL `todos` 中狀態為 `done`
-- [ ] Go module 初始化完成（`control-plane/go.mod`）
-- [ ] 核心型別定義通過編譯（`go build ./...`）
-- [ ] 核心型別的單元測試通過（`go test -race ./...`）
+### 設計階段（✅ 全部完成）
+
+- [x] 所有功能的設計文件狀態為 `approved`（通過兩位 reviewer 審查）
+  - [x] `project-model.md` — approved（四輪）
+  - [x] `state-store.md` — approved（五輪）
+  - [x] `config-schema.md` — approved（六輪）
+  - [x] `runtime-adapter.md` — approved（兩輪）
+
+### 實作階段
+
+#### Group 0 — Bootstrap
+
+| 任務 ID | 說明 | 狀態 |
+|---------|------|------|
+| `bootstrap` | `go mod init`、目錄結構、`.golangci.yml`、justfile targets | ✅ done |
+
+#### Group 1 — Domain 基礎型別
+
+| 任務 ID | 說明 | 狀態 |
+|---------|------|------|
+| `domain-service-name` | `ServiceName` type + 13 個常數 | ✅ done |
+| `domain-project-status` | `ProjectStatus` type + 8 個常數 | ✅ done |
+| `domain-project-health` | `ServiceStatus`、`ServiceHealth`、`ProjectHealth`、`IsHealthy()` | ✅ done |
+
+#### Group 2 — Domain 專案模型
+
+| 任務 ID | 說明 | 狀態 |
+|---------|------|------|
+| `domain-project-model` | `ProjectModel`、`NewProject()`、`TransitionTo()`、`ValidateSlug()`、`TransitionError` | ✅ done |
+
+#### Group 3 — Domain Config Schema
+
+| 任務 ID | 說明 | 狀態 |
+|---------|------|------|
+| `domain-config-types` | `ConfigCategory`、`ConfigScope`、`ConfigEntry`、`PortSet`（6 欄位） | ✅ done |
+| `domain-errors` | `ErrMissingRequiredConfig`、`ErrConfigNotOverridable`、`ErrInvalidPortSet`、`ErrNoAvailablePort` | ✅ done |
+| `domain-config-schema` | `ConfigSchema()` — 全部 94 個環境變數定義 | [ ] pending |
+| `domain-port-allocator` | `PortAllocator` interface | ✅ done |
+| `domain-renderer` | `Artifact` struct、`ConfigRenderer` interface | ✅ done |
+| `domain-secret-gen` | `SecretGenerator` interface、`GenerateProjectSecrets()` | [ ] pending |
+
+#### Group 4 — Domain ProjectConfig
+
+| 任務 ID | 說明 | 狀態 |
+|---------|------|------|
+| `domain-project-config` | `ProjectConfig`、`ResolveConfig()`、`computePerProjectVars()`、`ExtractPortSet()` | [ ] pending |
+
+#### Group 5 — Domain RuntimeAdapter
+
+| 任務 ID | 說明 | 狀態 |
+|---------|------|------|
+| `domain-runtime-adapter` | `RuntimeAdapter` interface（7 方法）、`AdapterError`、`StartError`、factory stub | [ ] pending |
+| `domain-mock-adapter` | `MockRuntimeAdapter` struct（7 個 func 欄位） | [ ] pending |
+
+#### Group 6 — Store 層
+
+| 任務 ID | 說明 | 狀態 |
+|---------|------|------|
+| `store-interfaces` | `ProjectRepository`、`ConfigRepository`、`Store` interface、store errors | [ ] pending |
+| `migration-ddl` | SQL migration（3 張資料表 + triggers + indexes + RLS；修正 `destroying` bug） | [ ] pending |
+| `store-postgres-project` | PostgreSQL `ProjectRepository` 實作 | [ ] pending |
+| `store-postgres-config` | PostgreSQL `ConfigRepository` 實作 | [ ] pending |
+
+#### Group 7 — 測試
+
+| 任務 ID | 說明 | 狀態 |
+|---------|------|------|
+| `test-project-model` | `TransitionTo()`、`ValidateSlug()`、`IsHealthy()` 單元測試 | [ ] pending |
+| `test-config-schema` | `ConfigSchema()` 完整性（94 個 key、無重複、分類驗證） | [ ] pending |
+| `test-project-config` | `ResolveConfig()` 優先順序、`ExtractPortSet()` 邊界 | [ ] pending |
+| `test-secret-gen` | hex/alphanumeric 格式、JWT 格式 | [ ] pending |
+| `test-store-integration` | `ProjectRepository` + `ConfigRepository` round-trip（需 DB） | [ ] pending |
 
 ### Phase 整合驗證
 

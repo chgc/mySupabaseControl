@@ -34,3 +34,21 @@ down project:
 # Show one project stack status.
 ps project:
   docker compose --env-file projects/{{project}}/.env -p supabase-{{project}} ps
+
+# ── Control Plane ─────────────────────────────────────────────────────────────
+
+# Build the control plane server.
+cp-build:
+  cd control-plane && go build ./...
+
+# Run all control plane unit tests (no DB required).
+cp-test:
+  cd control-plane && go test ./...
+
+# Run control plane integration tests (requires DB connection).
+cp-test-integration:
+  cd control-plane && go test -tags=integration ./...
+
+# Run golangci-lint on the control plane.
+cp-lint:
+  cd control-plane && golangci-lint run ./...
