@@ -106,7 +106,7 @@ Phase 1 完成後，系統應具備：
 |---------|------|------|
 | `domain-config-types` | `ConfigCategory`、`ConfigScope`、`ConfigEntry`、`PortSet`（6 欄位） | ✅ done |
 | `domain-errors` | `ErrMissingRequiredConfig`、`ErrConfigNotOverridable`、`ErrInvalidPortSet`、`ErrNoAvailablePort` | ✅ done |
-| `domain-config-schema` | `ConfigSchema()` — 全部 94 個環境變數定義 | [ ] pending |
+| `domain-config-schema` | `ConfigSchema()` — 全部 94 個環境變數定義 | ✅ done |
 | `domain-port-allocator` | `PortAllocator` interface | ✅ done |
 | `domain-renderer` | `Artifact` struct、`ConfigRenderer` interface | ✅ done |
 | `domain-secret-gen` | `SecretGenerator` interface、`GenerateProjectSecrets()` | [ ] pending |
