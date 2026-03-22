@@ -5,6 +5,7 @@ package domain
 // ServiceName identifies a service within a Supabase project stack.
 type ServiceName string
 
+// Service name constants for the Supabase stack.
 const (
 	ServiceDB         ServiceName = "db"
 	ServiceAuth       ServiceName = "auth"

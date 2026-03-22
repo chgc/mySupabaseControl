@@ -3,6 +3,7 @@ package domain
 // ProjectStatus represents the lifecycle state of a Supabase project.
 type ProjectStatus string
 
+// Project lifecycle status constants.
 const (
 	StatusCreating  ProjectStatus = "creating"
 	StatusStopped   ProjectStatus = "stopped"

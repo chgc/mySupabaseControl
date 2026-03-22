@@ -5,6 +5,7 @@ import "time"
 // ServiceStatus represents the health state of a single service.
 type ServiceStatus string
 
+// Service status constants.
 const (
 	ServiceStatusHealthy   ServiceStatus = "healthy"
 	ServiceStatusUnhealthy ServiceStatus = "unhealthy"

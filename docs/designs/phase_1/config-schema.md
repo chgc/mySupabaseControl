@@ -290,7 +290,7 @@ func (c *ProjectConfig) GetSensitive(key string) (string, bool)
 **載入現有專案流程：**
 1. `config, err := ConfigRepository.GetConfig(ctx, slug)` — 從 DB 載入完整設定
 2. `portSet, err := ExtractPortSet(config)` — 從 Values 重建 PortSet
-3. `secrets := extractSecrets(config)` — 從 Values 萃取 GeneratedSecret 類別的 key-value（ConfigSchema() 提供分類資訊）
+3. `secrets := ExtractSecrets(config)` — 從 Values 萃取 GeneratedSecret 類別的 key-value（ConfigSchema() 提供分類資訊）
 4. `ResolveConfig(project, secrets, portSet, latestOverrides)` — 套用最新 overrides
    （純載入場景：`latestOverrides = config.Overrides`；編輯場景：合併 `config.Overrides` 與新請求的覆寫值）
 
@@ -365,10 +365,10 @@ artifacts, err := renderer.Render(config)
 // 注意：KONG_HTTPS_PORT = KongHTTP + 1，為衍生值，由此函數計算，不從 PortSet 讀取。
 func computePerProjectVars(project *ProjectModel, ports *PortSet) map[string]string
 
-// extractSecrets 從 ProjectConfig 的 Values 中萃取 GeneratedSecret 分類的 key-value。
+// ExtractSecrets 從 ProjectConfig 的 Values 中萃取 GeneratedSecret 分類的 key-value。
 // 依賴 ConfigSchema() 取得每個 key 的 Category 分類資訊。
 // 為 ResolveConfig 的 internal helper（Go 實作時應為 unexported）。
-func extractSecrets(config *ProjectConfig) map[string]string
+func ExtractSecrets(config *ProjectConfig) map[string]string
 
 // ExtractPortSet 從 ProjectConfig 的 Values 中重建 PortSet。
 // 用於載入已有專案時，從 ConfigRepository.GetConfig 的回傳值中萃取 port 資訊。
@@ -564,7 +564,7 @@ var ErrNoAvailablePort = errors.New("no available port")
 - **第三輪意見（摘要）：**
   - 所有前輪問題均已正確修復，架構設計健全。
   - 🟡 **[已修正]** ComputePerProjectVars 應為 unexported → 文件標注 Go 實作應用 lowercase
-  - 🟡 **[已修正]** extractSecrets 缺少正式簽名 → 補充函數定義
+  - 🟡 **[已修正]** ExtractSecrets exported（internal helper 改為 exported，供 service layer 呼叫）
   - 🟡 **[已修正]** latestOverrides 來源說明 → 補充純載入 vs 編輯場景
 
 ### Reviewer B（實作）
@@ -580,7 +580,7 @@ var ErrNoAvailablePort = errors.New("no available port")
   1. 🔴 **[已修正]** ExtractPortSet IMGPROXY_BIND ":{port}" 格式陷阱 → 加入完整欄位對應表含格式說明
   2. 🟡 **[已修正]** ErrInvalidPortSet / ErrConfigNotOverridable struct 定義補全
   3. 🟡 **[已修正]** latestOverrides 來源說明（與 Reviewer A 一致）
-  4. 🟡 **[已修正]** extractSecrets 正式簽名
+  4. 🟡 **[已修正]** ExtractSecrets 改為 exported（service layer 需要從外部呼叫）
   5. 🟡 **[已修正]** 測試類型分配表補充 ExtractPortSet + SaveConfig round-trip
 - **第一輪意見（摘要）：** 3 個阻斷性問題，全部已解決。
 - **第二輪意見（摘要）：**
@@ -610,7 +610,7 @@ var ErrNoAvailablePort = errors.New("no available port")
 | `domain-renderer` | `renderer.go` | `Artifact` struct（Path, Content, Mode）、`ConfigRenderer` interface（`Render(*ProjectConfig) ([]Artifact, error)`） | ✅ done |
 | `domain-secret-gen` | `secret.go` | `SecretGenerator` interface（RandomHex, RandomAlphanumeric, GenerateJWT）、`cryptoSecretGenerator` 實作、`NewSecretGenerator()`、`GenerateProjectSecrets(gen)` | 🔄 in_progress |
 | `domain-config-schema` | `config_schema.go` | `ConfigSchema() []ConfigEntry` — 全部 94 個環境變數（StaticDefault×36, PerProject×16, GeneratedSecret×12, UserOverridable×30） | 🔄 in_progress |
-| `domain-project-config` | `project_config.go` | `ProjectConfig` struct、`Get()`、`GetSensitive()`、`ResolveConfig(project, secrets, portSet, overrides)`、`computePerProjectVars()`（internal）、`extractSecrets()`（internal）、`ExtractPortSet()` | [ ] pending |
+| `domain-project-config` | `project_config.go` | `ProjectConfig` struct、`Get()`、`GetSensitive()`、`ResolveConfig(project, secrets, portSet, overrides)`、`computePerProjectVars()`（internal）、`ExtractSecrets()`（exported）、`ExtractPortSet()` | [ ] pending |
 | `test-config-schema` | `config_schema_test.go` | ConfigSchema() 完整性：共 94 個 key、無重複 key、各分類數量正確（36+16+12+30） | [ ] pending |
 | `test-project-config` | `project_config_test.go` | ResolveConfig() 優先順序（覆寫 > PerProject > Secret > 預設值）、`ErrConfigNotOverridable`、`ErrMissingRequiredConfig`、`ExtractPortSet()`（含 IMGPROXY_BIND `:{port}` 格式、key 遺失邊界） | [ ] pending |
 | `test-secret-gen` | `secret_test.go` | hex/alphanumeric 長度與格式、`ANON_KEY` 為合法 JWT（3 段 base64）、`SERVICE_ROLE_KEY` role claim 正確 | [ ] pending |
