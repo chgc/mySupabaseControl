@@ -7,7 +7,7 @@
 
 ## 狀態
 
-design_complete
+approved（兩輪審查通過）
 
 ## Phase
 
@@ -457,14 +457,14 @@ type MockRuntimeAdapter struct {
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪）
+- **狀態：** 🔁 REVISE（第一輪）→ ✅ APPROVE（第二輪）
 - **第一輪意見（摘要）：**
   1. 🔴 **[已修正]** `destroying` 狀態孤立：`Destroy` 前置條件遺漏 `destroying` → 加入 `stopped || destroying || error`
   2. 🔴 **[已修正]** `ErrServiceNotHealthy + ProjectHealth` 無法共回傳：定義 `StartError` 結構攜帶 `Health *ProjectHealth` 與 `Err error`
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪）
+- **狀態：** 🔁 REVISE（第一輪）→ ✅ APPROVE（第二輪）
 - **第一輪意見（摘要）：**
   1. 🔴 **[已修正]** 冪等性與前置條件矛盾：明確說明前置條件由呼叫端負責，Adapter 冪等性指 runtime 操作層面
   2. 🔴 **[已修正]** 設定更新路徑不可實作：`RenderConfig` 只渲染不寫入，增加 `ApplyConfig` 方法處理渲染+寫入
