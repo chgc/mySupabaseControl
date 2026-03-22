@@ -115,7 +115,7 @@ Phase 1 完成後，系統應具備：
 
 | 任務 ID | 說明 | 狀態 |
 |---------|------|------|
-| `domain-project-config` | `ProjectConfig`、`ResolveConfig()`、`computePerProjectVars()`、`ExtractPortSet()` | [ ] pending |
+| `domain-project-config` | `ProjectConfig`、`ResolveConfig()`、`computePerProjectVars()`、`ExtractPortSet()` | ✅ done |
 
 #### Group 5 — Domain RuntimeAdapter
 
