@@ -114,7 +114,7 @@ Runtime Adapter 必須抽象化上述所有差異。
 
 ### Phase 1 — 定義 Runtime 無關的 Control Plane 模型
 
-> **Phase Plan：** `docs/designs/phase-1-plan.md`（待建立）
+> **Phase Plan：** `docs/designs/phase_1/phase-1-plan.md`
 
 - 盤點 `docker-compose.yml` 中所有環境變數並分類：
   - **共用靜態預設值** — 所有專案相同（例如 `POSTGRES_HOST=db`、`SMTP_PORT=2500`）
