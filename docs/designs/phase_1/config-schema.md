@@ -7,7 +7,7 @@
 
 ## 狀態
 
-revising（第四輪審查後修訂完成）
+approved（六輪審查通過）
 
 ## Phase
 
@@ -589,26 +589,12 @@ var ErrNoAvailablePort = errors.New("no available port")
   3. 🔴 **[已修正]** SaveConfig 隱式依賴 ConfigSchema() → 加入實作注意說明
   4. 🟡 **[已修正]** 測試策略補充 round-trip、ExtractPortSet 邊界案例
 
-**第五輪審查結果（兩位審查者）：**
+**第六輪審查結果（兩位審查者）：**
 
-**Reviewer A（架構）— 🔁 REVISE（第五輪）**
-> 注意：Reviewer A 第五輪部分 blockers 為 prompt omission（實際文件已有正確內容）：
-> - 🔴 B1 SUPABASE_PUBLIC_URL 無公式 → 實際文件有明確公式（`http://localhost:${KONG_HTTP_PORT}`），prompt 摘要省略
-> - 🔴 B2 DB_AFTER_CONNECT_QUERY 用底線表示空格 → 實際文件有正確字串，prompt 摘要失真
-> - 🔴 B4 Artifact 未定義 → 實際文件第 300 行已定義，prompt 省略該段
->
-> 真正需修正的 blockers：
-> - 🔴 B3 **[已修正]** ErrConfigNotOverridable 無 callsite → ResolveConfig godoc 補充回傳此錯誤的條件
-> - 🔴 B5 **[已修正]** ComputePerProjectVars 大小寫矛盾 → 統一改為 lowercase `computePerProjectVars`（含流程說明中的引用）
+**Reviewer A（架構）— ✅ APPROVE（第六輪）**
 
-**Reviewer B（實作）— 🔁 REVISE（第五輪）**
-> 注意：Reviewer B 第五輪部分 blockers 為 prompt omission（實際文件已有正確內容）：
-> - 🔴 B1 Artifact 未定義 → 實際文件第 300 行已定義，prompt 省略該段
-> - 🔴 B2 GetConfig not-found → 定義在 state-store.md（已 approved），非 config-schema 範圍
->
-> 真正需修正的 blockers：
-> - 🔴 B3 **[已修正]** ResolveConfig godoc 未說明回傳 ErrConfigNotOverridable → 補充條件說明
-> - 🔴 B4 **[已修正]** KongHTTPS 矛盾：catalog 定義為衍生（HTTP+1）但 PortSet 含獨立欄位 → 移除 KongHTTPS 欄位，在 computePerProjectVars 中衍生，ExtractPortSet 不讀取此 key
+**Reviewer B（實作）— ✅ APPROVE（第六輪）**
+> 所有型別、介面、錯誤 struct、欄位對應、衍生規則、優先順序、流程說明均明確無歧義。
 
 ---
 
