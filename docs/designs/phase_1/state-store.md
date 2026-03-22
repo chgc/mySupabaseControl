@@ -7,7 +7,7 @@
 
 ## 狀態
 
-revising（第一輪審查後修訂中）
+revising（第二輪審查後修訂中）
 
 ## Phase
 
@@ -52,7 +52,7 @@ CREATE TABLE projects (
     slug            TEXT PRIMARY KEY,
     display_name    TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'creating',
-    previous_status TEXT,
+    previous_status TEXT,  -- NULL 在 Go ProjectModel.PreviousStatus 中映射為空字串（零值）
     last_error      TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -192,16 +192,24 @@ type ProjectRepository interface {
     // 若不存在，回傳 ErrProjectNotFound。
     // Health 欄位為 runtime-only，GetBySlug 回傳的 ProjectModel.Health 固定為 nil，
     // 由 runtime adapter 在查詢後填充（不持久化至 DB）。
+    // 注意：DB 中 previous_status 的 NULL 值，在回傳的 ProjectModel 中
+    // 對應 PreviousStatus 零值（空字串 ""）。
     GetBySlug(ctx context.Context, slug string) (*ProjectModel, error)
 
-    // List 列出所有非 destroyed 的專案。
-    // 可選 filters：依狀態篩選。
+    // List 列出專案。預設排除 destroyed 狀態的專案。
+    // 若需查詢 destroyed 專案，可明確傳入 WithStatus(StatusDestroyed)。
+    // SQL 邏輯：
+    //   - 不帶 filter：WHERE status != 'destroyed'
+    //   - 帶 WithStatus(s)：WHERE status = s（覆蓋預設排除，包括 s = StatusDestroyed 的情況）
+    // 回傳結果依 created_at ASC 排序。
     List(ctx context.Context, filters ...ListFilter) ([]*ProjectModel, error)
 
     // UpdateStatus 更新專案狀態與 previous_status。
     // lastError 僅在 status 為 StatusError 時有意義；
     // 其他狀態下傳入空字串，實作應清空 DB 中的 last_error 欄位。
-    // previousStatus 為轉換前的狀態，應在更新前由呼叫端傳入（通常從 ProjectModel.Status 取得）。
+    // previousStatus 為更新前的狀態（通常從 ProjectModel.Status 讀取）。
+    // DB 儲存映射：Go 零值 "" 映射為 SQL NULL（代表專案尚未進入 error 狀態）。
+    // 實作應使用 NULLIF($3, '') 將空字串轉為 NULL。
     // 在更新前不在此層驗證狀態轉換合法性（此為 domain 層職責）。
     UpdateStatus(ctx context.Context, slug string, status, previousStatus ProjectStatus, lastError string) error
 
@@ -246,13 +254,17 @@ type ConfigRepository interface {
     // GetConfig 取得專案的完整設定。
     GetConfig(ctx context.Context, projectSlug string) (*ProjectConfig, error)
 
-    // SaveOverrides 儲存使用者覆寫值。
+    // SaveOverrides 全量替換此專案的 overrides（先 DELETE 再 INSERT）。
+    // 若需合併（per-key UPSERT），呼叫端應先 GetOverrides 再合併後呼叫 SaveOverrides。
     SaveOverrides(ctx context.Context, projectSlug string, overrides map[string]string) error
 
     // GetOverrides 取得使用者覆寫值。
     GetOverrides(ctx context.Context, projectSlug string) (map[string]string, error)
 
-    // DeleteConfig 刪除專案的所有設定（專案 destroy 時呼叫）。
+    // DeleteConfig 強制刪除專案的 project_configs 與 project_overrides 所有資料。
+    // 注意：正常 destroy 流程（`Delete` 方法）不應呼叫此方法。
+    // destroy 後的設定記錄保留供審計用途。
+    // 僅在明確需要清除資料時使用（例如：GDPR 刪除請求、測試清理）。
     DeleteConfig(ctx context.Context, projectSlug string) error
 }
 ```
@@ -288,13 +300,21 @@ type Store interface {
 
 ### 更新狀態
 
-1. `repo.UpdateStatus(ctx, slug, newStatus, previousStatus, lastError)` — UPDATE projects SET status, previous_status, last_error, updated_at
+1. `repo.UpdateStatus(ctx, slug, newStatus, previousStatus, lastError)` 執行：
+   ```sql
+   UPDATE projects
+   SET status = $2,
+       previous_status = NULLIF($3, ''),
+       last_error = NULLIF($4, ''),
+       updated_at = now()
+   WHERE slug = $1
+   ```
 
 ### 刪除專案
 
 1. `repo.Delete(ctx, slug)` — UPDATE projects SET status = 'destroyed'
 2. `project_configs` 與 `project_overrides` 記錄**保留不刪除**，供審計用途。
-   （soft delete 不觸發 FK CASCADE；若需清除，請明確呼叫 `DeleteConfig`）
+   （soft delete 不觸發 FK CASCADE；若需強制清除，請明確呼叫 `DeleteConfig`，但正常 destroy 不需要）
 
 ---
 
@@ -326,6 +346,9 @@ type Store interface {
 - GetBySlug：存在的專案、不存在的專案
 - List：空清單、有結果、依狀態篩選、排除 destroyed
 - UpdateStatus：合法更新、不存在的專案
+- UpdateStatus：previous_status 持久化（驗證 DB 中欄位值正確）
+- UpdateStatus：lastError 空字串清空 last_error 欄位（驗證 DB 中為 NULL）
+- GetBySlug：previous_status DB NULL → Go 零值 "" 映射正確
 - Exists：存在/不存在
 - SaveConfig：正常儲存、覆寫已存在的設定
 - GetConfig：存在/不存在
@@ -385,6 +408,7 @@ type Store interface {
 - Soft delete 的專案資料保留多久？是否需要定期清理 destroyed 的專案？
 - `project_configs` 是否需要加密儲存 secret 值？Phase 1 先用明文，Phase 3 評估 Supabase Vault。
 - 是否需要 optimistic locking（版本號）防止併發更新？Phase 1 先不實作。
+- Optimistic locking 暫緩（Phase 1）。注意：`UpdateStatus` 中 `previousStatus` 在高並發情境下可能過時（stale read），建議 Phase 2 評估版本號或 SELECT FOR UPDATE。
 - Migration 工具選擇：使用 Supabase Migration 或 golang-migrate？建議使用 Supabase Migration。
 
 ---
@@ -393,29 +417,24 @@ type Store interface {
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪）
-- **第一輪意見（摘要）：**
-  1. 🔴 **[已修正]** DDL 缺 `previous_status` 欄位 → 加入欄位與 CHECK 約束，更新 UpdateStatus 簽名
-  2. 🔴 **[已修正]** ON DELETE CASCADE 與 soft delete 語意衝突 → 移除 CASCADE，保留審計記錄
-  3. 🟡 **[已修正]** ProjectHealth 未持久化說明缺失
-  4. 🟡 **[已修正]** ErrInvalidTransition 責任邊界錯誤 → 改為 ErrStoreInternal
-  5. 🟡 **[已修正]** Exists() 對 destroyed slug 語意未定義
-  6. 🟡 **[已修正]** UpdateStatus lastError 清除行為未說明
-  7. 🔵 **[已修正]** Store 介面 ISP 說明、RLS TODO、N4 備注
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）
+- **第一輪意見（摘要）：** 4 個阻斷性問題，全部已解決。
+- **第二輪意見（摘要）：**
+  1. 🔴 **[已修正]** DeleteConfig godoc 與 Delete 流程矛盾 → 明確為管理操作，正常 destroy 不呼叫
+  2. 🔴 **[已修正]** previous_status NULL → Go 零值映射 → godoc 補充，DDL 加注解，SQL 範例加 NULLIF
+  3. 🟡 **[已修正]** SaveOverrides 語意說明（全量替換）
+  4. 🟡 **[已修正]** UpdateStatus stale read 風險補充到待決問題
+  5. 🟡 **[已修正]** List 排序說明
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪）
-- **第一輪意見（摘要）：**
-  1. 🔴 **[已修正]** DDL 缺 `previous_status` 欄位（與 Reviewer A 一致）
-  2. 🔴 **[已修正]** ON DELETE CASCADE 與 soft delete 衝突（與 Reviewer A 一致）
-  3. 🔴 **[已修正]** ProjectHealth 完全無持久化策略 → 明確聲明 runtime-only，GetBySlug 回傳 nil Health
-  4. 🔴 **[已修正]** 缺少 display_name 更新路徑 → 明確聲明 Phase 1 不可變
-  5. 🟡 **[已修正]** UpdateStatus lastError 應為 *string 或說明空字串語意 → 加入 godoc 說明
-  6. 🟡 **[已修正]** Exists() TOCTOU 說明
-  7. 🟡 **[已修正]** SaveConfig UPSERT 語意說明
-  8. 🟡 **[已修正]** PostgreSQL error code 映射
-  9. 🟡 **[已修正]** UpdateStatus 狀態轉換驗證責任 → 移至 domain 層
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）
+- **第一輪意見（摘要）：** 4 個阻斷性問題，全部已解決。
+- **第二輪意見（摘要）：**
+  1. 🔴 **[已修正]** DeleteConfig godoc 矛盾（與 Reviewer A 一致）
+  2. 🔴 **[已修正]** List 排除 destroyed vs WithStatus(StatusDestroyed) 語意歧義 → 明確說明 filter override 邏輯
+  3. 🟡 **[已修正]** 測試策略補充 previous_status 持久化案例
+  4. 🟡 **[已修正]** NULLIF SQL 範例補充
 
 ---
 

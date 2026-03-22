@@ -7,7 +7,7 @@
 
 ## 狀態
 
-revising（第一輪審查後修訂中）
+revising（第二輪審查後修訂中）
 
 ## Phase
 
@@ -112,9 +112,9 @@ revising（第一輪審查後修訂中）
 | `PROJECT_DATA_DIR` | `./projects/${SLUG}/volumes` | studio, storage, imgproxy, db, functions | 專案資料目錄 |
 | `STUDIO_DEFAULT_ORGANIZATION` | `Default Organization` | studio | 預設組織 |
 | `STUDIO_DEFAULT_PROJECT` | `${DISPLAY_NAME}` | studio | 預設專案名稱 |
-| `STORAGE_TENANT_ID` | `stub` | storage | 儲存租戶 ID |
+| `STORAGE_TENANT_ID` | `stub` | storage | 儲存租戶 ID（Phase 1 暫用 stub 值，Phase 2 將改為從 SLUG 衍生） |
 | `POOLER_TENANT_ID` | `${SLUG}` | supavisor | 連線池租戶 ID |
-| `DOCKER_SOCKET_LOCATION` | `/var/run/docker.sock` | vector | Docker socket 路徑 |
+| `DOCKER_SOCKET_LOCATION` | `/var/run/docker.sock` | vector | Docker socket 路徑（TODO：Phase 2 評估改為 UserOverridable 以支援非標準 Docker Desktop 路徑） |
 | `STUDIO_PORT` | 自動分配（起始 54323） | studio | Studio UI port |
 | `PG_META_PORT` | 自動分配（起始 54380） | meta | Meta API port |
 | `IMGPROXY_BIND` | `:${IMGPROXY_PORT}`（自動分配，起始 54381）| imgproxy | ImgProxy 監聽 port |
@@ -280,12 +280,16 @@ func (c *ProjectConfig) GetSensitive(key string) (string, bool)
 **新建專案流程：**
 1. `GenerateProjectSecrets(gen)` — 產生 secrets
 2. `PortAllocator.AllocatePorts()` — 分配 ports
-3. `ResolveConfig(project, secrets, portSet, overrides)` — 合併設定
+3. `ResolveConfig(project, secrets, portSet, overrides)` — 合併設定（內部計算 PerProject vars）
 4. `ConfigRepository.SaveConfig(ctx, slug, config)` — 持久化
 
-**載入現有專案：**
-1. `ConfigRepository.GetConfig(ctx, slug)` — 從 DB 載入（含已存 secrets）
-2. `ResolveConfig(project, loadedSecrets, loadedPortSet, overrides)` — 套用最新 overrides
+> **實作注意（SaveConfig）：** `project_configs` table 的每筆 row 需要 `is_secret`（對應 `ConfigEntry.Sensitive`）與 `category` 欄位。`ConfigRepository.SaveConfig` 的實作必須呼叫 `ConfigSchema()` 做 key lookup，以取得每個 env var 的 metadata。`ProjectConfig.Values` 本身不攜帶這些資訊。
+
+**載入現有專案流程：**
+1. `config, err := ConfigRepository.GetConfig(ctx, slug)` — 從 DB 載入完整設定
+2. `portSet, err := ExtractPortSet(config)` — 從 Values 重建 PortSet
+3. `secrets := extractSecrets(config)` — 從 Values 萃取 GeneratedSecret 類別的 key-value（ConfigSchema() 提供分類資訊）
+4. `ResolveConfig(project, secrets, portSet, latestOverrides)` — 套用最新 overrides
 
 此設計確保 JWT_SECRET 等 secrets 在服務重啟後不會被重新產生。
 
@@ -338,13 +342,13 @@ func GenerateProjectSecrets(gen SecretGenerator) (map[string]string, error)
 // 1. 取得設定 schema
 schema := ConfigSchema()
 
-// 2. 產生 secrets（僅新專案）
+// 2. 產生 secrets（僅新建專案；載入已有專案時從 ConfigRepository 讀取）
 secrets, err := GenerateProjectSecrets(generator)
 
-// 3. 計算每專案設定（port、URL 等）
-projectVars := ComputePerProjectVars(project, portAllocator)
+// 3. 分配 ports（僅新建專案；載入已有專案時從 ProjectConfig 萃取）
+portSet, err := portAllocator.AllocatePorts()
 
-// 4. 合併所有設定值
+// 4. 合併所有設定值（ResolveConfig 內部呼叫 ComputePerProjectVars）
 config, err := ResolveConfig(project, secrets, portSet, userOverrides)
 
 // 5. 渲染為 runtime artifacts
@@ -354,7 +358,13 @@ artifacts, err := renderer.Render(config)
 ```go
 // ComputePerProjectVars 根據 ProjectModel 與 PortSet 計算所有 PerProject 分類的環境變數。
 // 回傳 key-value map，key 為環境變數名稱。
+// 此函數為 ResolveConfig 的 internal helper，一般情況下應透過 ResolveConfig 呼叫，不直接使用。
 func ComputePerProjectVars(project *ProjectModel, ports *PortSet) map[string]string
+
+// ExtractPortSet 從 ProjectConfig 的 Values 中重建 PortSet。
+// 用於載入已有專案時，從 ConfigRepository.GetConfig 的回傳值中萃取 port 資訊。
+// 若任何必要的 port key 遺失或值格式不正確，回傳 ErrInvalidPortSet。
+func ExtractPortSet(config *ProjectConfig) (*PortSet, error)
 ```
 
 ---
@@ -364,11 +374,12 @@ func ComputePerProjectVars(project *ProjectModel, ports *PortSet) map[string]str
 ### 建立專案時的設定產生
 
 1. `GenerateProjectSecrets(gen)` — 產生 JWT_SECRET、POSTGRES_PASSWORD 等
-2. `ComputePerProjectVars(project, portAllocator)` — 計算 KONG_HTTP_PORT、API_EXTERNAL_URL 等
-3. `ResolveConfig(project, secrets, portSet, overrides)` — 合併所有設定值
+2. `portAllocator.AllocatePorts()` — 分配 KONG_HTTP_PORT、POSTGRES_PORT 等（回傳 *PortSet）
+3. `ResolveConfig(project, secrets, portSet, overrides)` — 合併所有設定值（內部計算 PerProject vars）
 4. 驗證所有 `Required` 的 ConfigEntry 都有值
 5. `renderer.Render(config)` — 渲染為 .env（或 K8s YAML）
 6. 寫入檔案系統
+7. `ConfigRepository.SaveConfig(ctx, slug, config)` — 持久化至 Supabase
 
 ### Port 分配
 
@@ -405,6 +416,7 @@ type PortSet struct {
 | Port 全部佔用 | 回傳 `ErrNoAvailablePort` | `{ "error": "no_available_port" }` |
 | 必要設定值遺漏 | 回傳 `ErrMissingRequiredConfig` + 遺漏的 key 清單 | `{ "error": "missing_config", "keys": [...] }` |
 | 使用者覆寫的 key 不在 UserOverridable 分類 | 回傳 `ErrConfigNotOverridable` | `{ "error": "not_overridable", "key": "..." }` |
+| ExtractPortSet 的 port key 遺失或格式錯誤 | 回傳 `ErrInvalidPortSet` | `{ "error": "invalid_port_set" }` |
 
 ```go
 // ErrMissingRequiredConfig 在必要設定值遺漏時回傳。
@@ -430,6 +442,9 @@ func (e *ErrMissingRequiredConfig) Error() string {
 - Port 分配：不衝突、邊界條件（全滿時回傳錯誤）
 - 使用者覆寫驗證：只允許 UserOverridable 類別
 - Sensitive 欄位：GetSensitive 與 Get 的行為差異
+- SaveConfig / GetConfig round-trip：存入再讀出，確認 94 個 key 完整且 is_secret 正確
+- 載入已有專案的 ResolveConfig 路徑：ExtractPortSet 正確重建、覆寫邏輯正確套用
+- ExtractPortSet 邊界：port key 遺失時回傳 ErrInvalidPortSet
 
 ### 測試類型分配
 
@@ -493,30 +508,22 @@ func (e *ErrMissingRequiredConfig) Error() string {
 
 ### Reviewer A（架構）
 
-- **狀態：** 🔁 REVISE（第一輪）
-- **第一輪意見（摘要）：**
-  1. 🔴 **[已修正]** Port 起始值矛盾（5432 vs 54320）
-  2. 🔴 **[已修正]** PortSet 不完整、StaticDefault 誤放 per-project ports → 移至 PerProject，補充 Studio/Meta/ImgProxy port
-  3. 🔴 **[已修正]** JWT_EXPIRY 分類錯誤 → 移至 UserOverridable
-  4. 🔴 **[已修正]** DASHBOARD_USERNAME 分類錯誤 → 移至 UserOverridable
-  5. 🔴 **[已修正]** env var 數量不符（89 → 94）
-  6. 🔴 **[已修正]** ResolveConfig 簽名矛盾 → 加入 secrets 與 portSet 參數
-  7. 🟡 **[已修正]** DB_ENC_KEY 安全性標記 TODO
-  8. 🔵 **[已修正]** ConfigScope 使用說明、PortAllocator 並發安全
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）
+- **第一輪意見（摘要）：** 6 個阻斷性問題，全部已解決。
+- **第二輪意見（摘要）：**
+  1. 🔴 **[已修正]** ComputePerProjectVars 三處流程矛盾 + 參數型別錯誤 → 採用方案 A，移除顯式呼叫步驟，統一流程
+  2. 🟡 **[已修正]** 載入流程 loadedPortSet 來源補充說明（參見 state-store.md）
+  3. 🟡 **[已修正]** DOCKER_SOCKET_LOCATION / STORAGE_TENANT_ID 分類說明補充
 
 ### Reviewer B（實作）
 
-- **狀態：** 🔁 REVISE（第一輪）
-- **第一輪意見（摘要）：**
-  1. 🔴 **[已修正]** ResolveConfig 簽名不完整（與 Reviewer A 一致）
-  2. 🔴 **[已修正]** Config 持久化策略缺失 → 加入持久化說明，參考 state-store ConfigRepository
-  3. 🔴 **[已修正]** Port 起始值矛盾（與 Reviewer A 一致）
-  4. 🔴 **[已修正]** ServiceName 型別未定義 → 加入 const 定義
-  5. 🟡 **[已修正]** JWT_EXPIRY 分類錯誤（與 Reviewer A 一致）
-  6. 🟡 **[已修正]** ErrMissingRequiredConfig 應為 struct
-  7. 🟡 **[已修正]** ComputePerProjectVars 缺少正式簽名
-  8. 🟡 **[已修正]** PortAllocator 並發安全說明
-  9. 🟡 **[已修正]** GetSensitive vs Get 行為差異說明
+- **狀態：** 🔁 REVISE（第一輪）→ 🔁 REVISE（第二輪）
+- **第一輪意見（摘要）：** 3 個阻斷性問題，全部已解決。
+- **第二輪意見（摘要）：**
+  1. 🔴 **[已修正]** 載入流程 loadedPortSet 來源不明 → 加入 ExtractPortSet() 函數，補充載入流程步驟
+  2. 🔴 **[已修正]** ComputePerProjectVars 流程矛盾（與 Reviewer A 一致）
+  3. 🔴 **[已修正]** SaveConfig 隱式依賴 ConfigSchema() → 加入實作注意說明
+  4. 🟡 **[已修正]** 測試策略補充 round-trip、ExtractPortSet 邊界案例
 
 ---
 
