@@ -152,9 +152,24 @@ Runtime Adapter 必須抽象化上述所有差異。
   - `renderConfig(project) → runtime-specific artifacts`
 - 確定 Control Plane 的狀態儲存（以 Supabase 為後端的 DB）。
 
-### Phase 2 — 實作 Docker Compose Runtime Adapter
+### Phase 2 — 實作 Docker Compose Runtime Adapter ✅
 
-> **Phase Plan：** `docs/designs/phase-2-plan.md`（待建立）
+> **Phase Plan：** `docs/designs/phase_2/phase-2-plan.md`
+> **審查狀態：✅ 全部通過（REVIEW_GATEWAY 兩位審查者均 APPROVE，代碼審查 PASS）**
+>
+> | 文件 | 狀態 |
+> |------|------|
+> | `docs/designs/phase_2/compose-port-allocator.md` | ✅ done（三輪審查） |
+> | `docs/designs/phase_2/compose-env-renderer.md` | ✅ done（兩輪審查） |
+> | `docs/designs/phase_2/compose-adapter.md` | ✅ done（兩輪審查） |
+>
+> **實作產出（commit `f907122`）：**
+> - `control-plane/internal/adapter/compose/port_allocator.go` — 自動 port 分配（TCP probe，KongHTTP+1 連號保留）
+> - `control-plane/internal/adapter/compose/env_renderer.go` — `.env` 渲染（godotenv 安全跳脫，GetSensitive()）
+> - `control-plane/internal/adapter/compose/adapter.go` — ComposeAdapter 實作所有 7 個 RuntimeAdapter 方法
+> - `control-plane/internal/adapter/compose/cmd_runner.go` — cmdRunner interface + osCmdRunner
+> - `control-plane/internal/adapter/compose/status_parser.go` — NDJSON `docker compose ps` 解析
+> - 36 個單元測試，全部通過（含 `-race`）
 
 - 以 Docker Compose 作為底層 runtime 實作 adapter 介面。
 - `renderConfig` → 從設定 schema + 專案模型產生 `projects/<slug>/.env`。
