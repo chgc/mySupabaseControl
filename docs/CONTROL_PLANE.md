@@ -34,7 +34,19 @@
 ### 核心架構圖
 
 ```
-┌─────────────────────────────────────────────────┐
+        CLI (sbctl)    MCP Server     Telegram Bot
+        本機終端操作   本機 AI 工具    手機遠端控制
+             │         (stdio)        + push 通知
+             │              │              │
+             └──────────────┼──────────────┘
+                            │
+              ┌─────────────▼─────────────┐
+              │       Use-case 層          │
+              │  create / start / stop /  │
+              │  reset / delete / list    │
+              └──────┬────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────┐
 │                 Control Plane                    │
 │                                                  │
 │  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
@@ -43,11 +55,6 @@
 │  └──────────┘  └──────────┘  └───────────────┘  │
 │                                                  │
 │  ┌──────────────────────────────────────────┐    │
-│  │         生命週期編排器                     │    │
-│  │  create / up / down / reset / list      │    │
-│  └──────────────┬───────────────────────────┘    │
-│                 │                                │
-│  ┌──────────────▼───────────────────────────┐    │
 │  │         Runtime Adapter 介面              │    │
 │  └──────┬───────────────────┬───────────────┘    │
 │         │                   │                    │
@@ -70,7 +77,9 @@
 - **Runtime Adapter 模式** — Docker Compose Adapter 渲染 `.env` 並執行 `docker compose`；未來 K8s Adapter 渲染 ConfigMap/Secret 並執行 `kubectl`/Helm。兩者實作同一個介面。
 - **設定 Schema，而非設定檔** — Control Plane 持有一個有型別的設定 schema，由 Runtime Adapter 渲染成各自 runtime 所需的格式。
 - **以 Supabase 作為持久化層** — Control Plane 使用自己的 Supabase 實例儲存 metadata，但不管理該實例的基礎設施（透過 `cli/just` 手動 bootstrap，視為基礎設施）。
-- **CLI/just 作為後端 adapter** — `cli` 與 `just` 僅可作為 Docker Compose Runtime Adapter 內部的執行機制，不作為使用者介面的入口。
+- **三層介面，共用 Use-case 層** — CLI、MCP Server、Telegram Bot 三個介面都直接呼叫 `internal/usecase/`，不重複業務邏輯；無 HTTP REST API。
+- **MCP 取代 ACP/A2A** — Control Plane 是「被 AI 呼叫的工具」，不是自主 agent。MCP 完全涵蓋本機 AI 整合需求，ACP/A2A 協定為過度設計。
+- **Telegram Bot 作為遠端介面** — 使用 outbound HTTPS long-polling，不需 port forwarding 或 VPN。allowed user list 存於環境變數 `TELEGRAM_ALLOWED_CHAT_IDS`。
 
 ### Docker Compose vs K8s 差異對照
 
@@ -156,11 +165,15 @@ Runtime Adapter 必須抽象化上述所有差異。
 - 保留 `justfile` 作為薄層的操作快捷方式，委派給 Control Plane。
 - 現有 PS1/Bash 腳本成為參考實作後棄用。
 
-### Phase 3 — CLI (`sbctl`) 與 MCP Server
+### Phase 3 — Use-case 層、CLI (`sbctl`) 與 MCP Server
 
 > **Phase Plan：** `docs/designs/phase-3-plan.md`（待建立）
 
-本 Phase 提供兩種操作介面，**無 HTTP Server、無 Web UI**：
+本 Phase 提供 Use-case 層與兩種操作介面，**無 HTTP Server、無 Web UI**：
+
+**0. Use-case 層（`internal/usecase/`）**
+
+在 domain 層之上引入 use-case 層，聚合 domain + store + adapter，作為 CLI、MCP、Telegram Bot 的共同入口。業務邏輯只在此層實作一次。
 
 **1. CLI — `sbctl`（基於 Cobra，支援 `--output json`）**
 
@@ -180,7 +193,7 @@ Runtime Adapter 必須抽象化上述所有差異。
 - JSON/YAML 輸出適合 AI agent 透過 subprocess 呼叫並解析結果。
 - 人類可讀的 table 輸出適合終端機操作。
 
-**2. MCP Server（Model Context Protocol）**
+**2. MCP Server（Model Context Protocol，stdio transport）**
 
 將所有 Control Plane 操作以 [MCP](https://modelcontextprotocol.io/) tools 形式暴露，讓 AI agent（如 GitHub Copilot、Claude Desktop）可直接呼叫：
 
@@ -198,10 +211,33 @@ Runtime Adapter 必須抽象化上述所有差異。
 - MCP Server 直接呼叫 use-case 層，**不透過 HTTP**。
 - 所有 tool 回傳結構化 JSON，不含 ANSI 色碼。
 - 可整合至 Copilot CLI、Claude Desktop、Cursor 等 MCP-compatible AI 工具。
+- 現階段僅支援 stdio；未來如需遠端 AI agent，再加 HTTP/SSE transport。
 
-### Phase 4 — 改善 CLI 使用體驗與 AI Agent 整合
+### Phase 4 — Telegram Bot（遠端控制）
 
 > **Phase Plan：** `docs/designs/phase-4-plan.md`（待建立）
+
+以 Telegram Bot 提供手機遠端控制能力，直接呼叫 use-case 層，不透過 HTTP API：
+
+| 指令 | 說明 |
+|------|------|
+| `/list` | 列出所有專案及狀態 |
+| `/status <slug>` | 查詢單一專案狀態 |
+| `/start <slug>` | 啟動專案 |
+| `/stop <slug>` | 停止專案 |
+| `/create <name>` | 建立新專案 |
+| `/reset <slug>` | 重置專案 |
+| `/delete <slug>` | 刪除專案（需二次確認） |
+
+- 以 `sbctl telegram serve` 啟動 daemon，使用 long-polling（不需 port forwarding 或 VPN）。
+- 狀態變更時主動 push 通知到設定的 chat。
+- 安全邊界：環境變數 `TELEGRAM_ALLOWED_CHAT_IDS` 限制允許操作的 chat ID。
+- Bot token 存於環境變數 `TELEGRAM_BOT_TOKEN`。
+- 套件：`github.com/go-telegram-bot-api/telegram-bot-api/v5`。
+
+### Phase 5 — 改善 CLI 使用體驗與 AI Agent 整合
+
+> **Phase Plan：** `docs/designs/phase-5-plan.md`（待建立）
 
 - Shell completion（`sbctl completion bash/zsh/fish`）。
 - 建立專案後顯示完整連線資訊（Studio URL、API URL、Postgres DSN、Anon/Service role key）。
@@ -210,9 +246,9 @@ Runtime Adapter 必須抽象化上述所有差異。
 - MCP tool 說明文字（description）精細化，讓 AI agent 能更準確選擇工具。
 - 全專案狀態彙整總覽（`sbctl status`）。
 
-### Phase 5 — K8s Runtime Adapter（未來，Mac Mini）
+### Phase 6 — K8s Runtime Adapter（未來，Mac Mini）
 
-> **Phase Plan：** `docs/designs/phase-5-plan.md`（待建立）
+> **Phase Plan：** `docs/designs/phase-6-plan.md`（待建立）
 
 - 以相同 adapter 介面在本地 K8s（預計使用 k3s）上實作。
 - `renderConfig` → ConfigMap + Secret YAML（或 Helm values）。
@@ -232,28 +268,32 @@ Runtime Adapter 必須抽象化上述所有差異。
 | **語言** | Go | 單一執行檔、啟動快速、無 runtime 依賴，適合 infra 工具開發 |
 | **CLI 框架** | Cobra (`github.com/spf13/cobra`) | Go CLI 事實標準；支援 subcommand、全域旗標、shell completion |
 | **MCP 框架** | `github.com/mark3labs/mcp-go` | Go 語言 MCP SDK；支援 stdio transport，與 Copilot CLI / Claude Desktop 整合 |
-| **無 HTTP Server** | CLI + MCP 直接呼叫 use-case 層 | 去掉 HTTP roundtrip，架構更簡單；無 Gin 依賴 |
-| **無前端** | CLI + MCP 取代 Web UI | 目標使用者為開發者與 AI agent，不需要 Web 介面 |
+| **Telegram Bot 框架** | `github.com/go-telegram-bot-api/telegram-bot-api/v5` | 成熟穩定的 Go Telegram Bot 套件；long-polling 無需 inbound port |
+| **Agent 協定選擇** | MCP（排除 ACP/A2A） | Control Plane 是「被 AI 呼叫的工具」，非自主 agent；MCP 完全涵蓋需求，ACP/A2A 過度設計 |
+| **遠端控制方式** | Telegram Bot（排除 REST API）| outbound HTTPS long-polling；不需 port forwarding / VPN；支援 push 通知 |
+| **無 HTTP Server** | CLI + MCP + Telegram 直接呼叫 use-case 層 | 去掉 HTTP roundtrip，架構更簡單；無 Gin 依賴 |
+| **無前端** | CLI + MCP + Telegram 取代 Web UI | 目標使用者為開發者與 AI agent，不需要 Web 介面 |
 | **狀態儲存** | Supabase | 自己的專案就用自己的產品（dogfooding） |
-| **Repo 結構** | Monorepo | `control-plane/`（Go CLI + MCP）、`scripts/`（現有）、`docker-compose.yml` |
-| **第一版 Runtime Adapter** | Docker Compose | Phase 1–4 目標；K8s Adapter 延後至 Phase 5 |
+| **Repo 結構** | Monorepo | `control-plane/`（Go CLI + MCP + Telegram）、`scripts/`（現有）、`docker-compose.yml` |
+| **第一版 Runtime Adapter** | Docker Compose | Phase 2 目標；K8s Adapter 延後至 Phase 6 |
 | **Control Plane 的 bootstrap** | 透過 `cli/just` 手動建立 | 簡單清楚；Control Plane 不自管自己的基礎設施 |
 
 ### Monorepo 目錄結構（建議）
 
 ```
 localsupabase/
-├── control-plane/       # Go CLI + MCP Server（無 HTTP server）
+├── control-plane/       # Go CLI + MCP Server + Telegram Bot（無 HTTP server）
 │   ├── cmd/
-│   │   └── sbctl/       # CLI + MCP Server 二進位（sbctl）
+│   │   └── sbctl/       # 統一 binary（sbctl）
 │   ├── internal/
 │   │   ├── cli/         # Cobra command 定義
 │   │   ├── mcp/         # MCP tool 定義（mark3labs/mcp-go）
-│   │   ├── usecase/     # Use-case 層（共用於 CLI 與 MCP）
+│   │   ├── telegram/    # Telegram Bot（go-telegram-bot-api）
+│   │   ├── usecase/     # Use-case 層（CLI、MCP、Telegram 共用入口）
 │   │   ├── domain/      # 專案模型、設定 schema
 │   │   ├── adapter/     # Runtime Adapter 介面與實作
 │   │   │   ├── compose/ # Docker Compose Adapter
-│   │   │   └── k8s/     # K8s Adapter（Phase 5）
+│   │   │   └── k8s/     # K8s Adapter（Phase 6）
 │   │   └── store/       # Supabase 持久化層
 │   └── go.mod
 ├── docs/                # 專案文件
