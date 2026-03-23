@@ -7,7 +7,7 @@
 
 ## 狀態
 
-approved
+done
 
 ## Phase
 
@@ -559,6 +559,12 @@ func (m *mockProjectRepo) List(ctx context.Context, f ...store.ListFilter) ([]*d
 
 ## 程式碼審查
 
-- **審查結果：** 待實作完成後審查
-- **發現問題：**
-- **修正記錄：**
+**審查日期：** 2026-03-23
+**審查工具：** code-review subagent（commit `f907122`）
+**審查結果：** ✅ PASS
+
+**發現問題：**
+- 🟢 `Start` 方法在 `up -d` 成功後等待第一次 ticker（5 秒）才做第一次健康檢查，無法立即偵測到已健康的服務 — 屬於效能優化機會，非邏輯錯誤
+- 🟢 `net.Listener` 在 `probePort` 內呼叫 `ln.Close()`，無資源洩漏 ✅
+
+**修正記錄：** 無需修正，上述觀察皆非阻礙性問題
