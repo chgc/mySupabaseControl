@@ -1,0 +1,40 @@
+# Docker Compose template for Supabase Control Plane managed projects.
+# All dynamic values are supplied via the .env file in the same directory.
+# This file is written once by ComposeAdapter.Create and never modified.
+#
+# NOTE: This is a placeholder. The full template will be defined in a separate task
+# once the use-case layer and CLI are in place (Phase 3).
+
+version: "3.8"
+
+services:
+  db:
+    image: supabase/postgres:15.8.1.040
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - ${PROJECT_DATA_DIR}/db/data:/var/lib/postgresql/data
+
+  kong:
+    image: kong:2.8.1
+    restart: unless-stopped
+    ports:
+      - "${KONG_HTTP_PORT}:8000"
+      - "${KONG_HTTPS_PORT}:8443"
+    environment:
+      KONG_DATABASE: "off"
+
+  studio:
+    image: supabase/studio:2024.01.22-v1.24.0
+    restart: unless-stopped
+    ports:
+      - "${STUDIO_PORT}:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
