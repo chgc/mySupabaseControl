@@ -7,7 +7,7 @@
 
 ## 狀態
 
-design_in_progress
+approved
 
 ## Phase
 
@@ -139,14 +139,14 @@ var composeTemplate []byte
 ```
 
 1. 計算 `projectDir = filepath.Join(projectsDir, project.Slug)`
-2. `os.MkdirAll(projectDir, 0700)` — 若已存在則為 idempotent
-3. 呼叫 `renderer.Render(config)` → `[]Artifact`
+2. 呼叫 `renderer.Render(config)` → `[]Artifact`（先計算，在任何磁碟操作前完成驗證）
+3. `os.MkdirAll(projectDir, 0700)` — 若已存在則為 idempotent
 4. 對每個 Artifact，`os.WriteFile(filepath.Join(projectDir, artifact.Path), artifact.Content, artifact.Mode)`
 5. `os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), composeTemplate, 0644)`
 6. 不執行 `docker compose pull`（避免 Create 耗時過長；pull 可在 Start 前由 use-case 層選擇性觸發）
-7. 成功回傳 `nil`；任何步驟失敗回傳 `&domain.AdapterError{Operation: "create", Slug: project.Slug, Cause: err}`
+7. 成功回傳 `nil`；任何步驟失敗回傳 `&domain.AdapterError{Operation: "create", Slug: project.Slug, Err: err}`
 
-> **注意**：不在 `Create` 內呼叫 `docker compose`。`Create` 純粹為磁碟操作，不需要 Docker daemon 可用。
+> **注意**：renderer.Render 在 MkdirAll 之前執行（Fail-fast before side-effects）。若 renderer 失敗，目錄不會被建立。不在 `Create` 內呼叫 `docker compose`，不需要 Docker daemon 可用。
 
 ### Start(ctx, project)
 
@@ -157,11 +157,11 @@ var composeTemplate []byte
 
 1. `projectDir = filepath.Join(projectsDir, project.Slug)`
 2. 執行 `runner.Run(ctx, projectDir, "docker", "compose", "up", "-d")`
-3. 若 `runner.Run` 失敗 → `return &domain.StartError{Slug: project.Slug, Cause: err, Health: nil}`
-4. 輪詢健康：每 5 秒呼叫一次 `Status(ctx, project)`，共輪詢至多 24 次（120 秒上限）
+3. 若 `runner.Run` 失敗 → `return &domain.StartError{Slug: project.Slug, Err: err, Health: nil}`
+4. 輪詢健康：每 5 秒呼叫一次 `Status(ctx, project)`，共至多 24 次 tick（即 24 × 5s = 120 秒上限）
    - 每次輪詢前檢查 `ctx.Done()`；若 canceled → 回傳 `ctx.Err()`
    - 若 `health.IsHealthy()` → 回傳 `nil`（成功）
-5. 120 秒內仍未健康 → 回傳 `&domain.StartError{Slug: project.Slug, Cause: domain.ErrServiceNotHealthy, Health: health}`
+5. 120 秒內仍未健康 → 回傳 `&domain.StartError{Slug: project.Slug, Err: domain.ErrServiceNotHealthy, Health: health}`
 
 > **健康輪詢實作**：使用 `time.NewTicker(5 * time.Second)` + `select` on `ticker.C` / `ctx.Done()`。不使用 `time.Sleep`（阻塞 context 取消偵測）。
 
@@ -174,7 +174,7 @@ var composeTemplate []byte
 
 1. `projectDir = filepath.Join(projectsDir, project.Slug)`
 2. `runner.Run(ctx, projectDir, "docker", "compose", "stop")`
-3. 失敗 → `&domain.AdapterError{Operation: "stop", Slug: project.Slug, Cause: err}`
+3. 失敗 → `&domain.AdapterError{Operation: "stop", Slug: project.Slug, Err: err}`
 
 > `docker compose stop` 預設 10 秒 graceful timeout（Docker 預設），不需 adapter 層額外控制。
 
@@ -186,12 +186,12 @@ var composeTemplate []byte
 ```
 
 1. `projectDir = filepath.Join(projectsDir, project.Slug)`
-2. `runner.Run(ctx, projectDir, "docker", "compose", "down", "-v", "--remove-orphans")`
-3. 若 runner 失敗 → `&domain.AdapterError{Operation: "destroy", Slug: project.Slug, Cause: err}`
-4. `os.RemoveAll(projectDir)` — 移除整個專案目錄
-5. 若 `os.RemoveAll` 失敗 → `&domain.AdapterError{Operation: "destroy:cleanup", Slug: project.Slug, Cause: err}`
+2. `downErr := runner.Run(ctx, projectDir, "docker", "compose", "down", "-v", "--remove-orphans")`（不論結果，繼續執行清理）
+3. `cleanupErr := os.RemoveAll(projectDir)` — 移除整個專案目錄（best-effort，無論 Step 2 是否失敗都執行）
+4. 若 `downErr != nil` → 回傳 `&domain.AdapterError{Operation: "destroy", Slug: project.Slug, Err: downErr}`
+5. 若 `cleanupErr != nil` → 回傳 `&domain.AdapterError{Operation: "destroy:cleanup", Slug: project.Slug, Err: cleanupErr}`
 
-> Step 4 無論 Step 2 是否成功都執行（attempt best-effort cleanup），但若 Step 2 失敗仍回傳其錯誤。
+> **Best-effort cleanup**：Step 2 與 Step 3 之間無 early return，確保即使 `docker compose down` 失敗，目錄仍被嘗試移除。`downErr` 優先回傳，因為它指向 Docker daemon 層的根本原因。
 
 ### Status(ctx, project)
 
@@ -247,7 +247,7 @@ var composeTemplate []byte
 2. 對每個 Artifact，`os.WriteFile(filepath.Join(projectDir, artifact.Path), artifact.Content, artifact.Mode)`
 3. 若容器運行中（`project.Status == domain.ProjectStatusRunning`）：
    - `runner.Run(ctx, projectDir, "docker", "compose", "up", "-d")` — Compose 偵測到 .env 變更並重建受影響的容器
-4. 失敗 → `&domain.AdapterError{Operation: "apply-config", Slug: project.Slug, Cause: err}`
+4. 失敗 → `&domain.AdapterError{Operation: "apply-config", Slug: project.Slug, Err: err}`
 
 > `docker-compose.yml` 在 ApplyConfig 時**不重寫**（模板永遠不變；若需更新 compose 檔案，需重新 Destroy + Create）。
 
@@ -257,15 +257,15 @@ var composeTemplate []byte
 
 | 情境 | 回傳 |
 |------|------|
-| renderer.Render 失敗 | 直接回傳 renderer error（Create/ApplyConfig）；RenderConfig pass-through |
+| renderer.Render 失敗 | `domain.AdapterError{Operation: "create"/"apply-config", ...}`；`RenderConfig` 則 pass-through |
 | os.MkdirAll / os.WriteFile 失敗 | `domain.AdapterError{Operation: "create"/"apply-config", ...}` |
 | runner.Run 失敗（非零 exit） | `domain.AdapterError{...}` 或 `domain.StartError{...}` |
-| Start 輪詢逾時 | `domain.StartError{Cause: domain.ErrServiceNotHealthy, Health: <snapshot>}` |
+| Start 輪詢逾時 | `domain.StartError{Err: domain.ErrServiceNotHealthy, Health: <snapshot>}` |
 | Context canceled 在輪詢中 | `ctx.Err()` |
 | parseComposePS 解析失敗（單行）| warn log + skip（不回傳 error） |
 | projectDir 不存在（ApplyConfig）| `os.WriteFile` 自然失敗 → AdapterError |
 
-> 所有 `AdapterError` 均以 `fmt.Errorf("compose adapter %s %q: %w", op, slug, cause)` 形式 wrap。
+> `AdapterError` 本身實作了 `error` 介面（`Error()` 已格式化訊息），直接以 `&domain.AdapterError{Operation: op, Slug: slug, Err: err}` 初始化即可，**不額外以 `fmt.Errorf` 包裝**（否則造成 double-wrap）。
 
 ---
 
@@ -319,11 +319,11 @@ func (m *mockConfigRenderer) Render(config *domain.ProjectConfig) ([]domain.Arti
 | 測試名稱 | 驗證項目 |
 |----------|----------|
 | `TestCreate_WritesFilesToDisk` | projectDir 建立、.env 內容正確、docker-compose.yml 為 embedded 內容 |
-| `TestCreate_RendererError` | renderer 失敗 → 回傳 AdapterError，不建立目錄 |
-| `TestCreate_MkdirAllError` | 若寫入失敗（eg. 權限不足）→ AdapterError |
+| `TestCreate_RendererError` | renderer 失敗 → 回傳 AdapterError，projectDir **不建立**（因 Render 在 MkdirAll 之前）|
+| `TestCreate_MkdirAllError` | MkdirAll 失敗（eg. 唯讀 FS）→ AdapterError，不寫入任何檔案 |
 | `TestStart_Success` | runner 呼叫順序：`up -d` → 輪詢 Status → IsHealthy → nil |
-| `TestStart_UpFailure` | `up -d` 失敗 → StartError{Cause: cmd error} |
-| `TestStart_HealthTimeout` | 輪詢 25 次（逾時） → StartError{Cause: ErrServiceNotHealthy, Health: snapshot} |
+| `TestStart_UpFailure` | `up -d` 失敗 → StartError{Err: cmd error} |
+| `TestStart_HealthTimeout` | 輪詢 24 次 tick 皆未健康（逾時）→ StartError{Err: ErrServiceNotHealthy, Health: snapshot} |
 | `TestStart_ContextCanceled` | ctx 取消 → ctx.Err() |
 | `TestStop_RunsComposeStop` | runner 呼叫為 `docker compose stop`，projectDir 正確 |
 | `TestStop_RunnerError` | 回傳 AdapterError |
@@ -371,8 +371,231 @@ func (m *mockConfigRenderer) Render(config *domain.ProjectConfig) ([]domain.Arti
 
 ### Reviewer A（架構）
 
-（待審）
+**[Round 2] 狀態：APPROVED**
+**意見：** 五項必修問題全部解決。
+
+1. ✅ 所有 `Cause:` → `Err:` 已正確替換（流程描述 + 錯誤表共 7 處，均使用 `Err:`）
+2. ✅ Create 流程順序已調整：`renderer.Render` 在 `os.MkdirAll` 之前執行；`TestCreate_RendererError` 斷言也同步更新為「projectDir 不建立」，邏輯自洽
+3. ✅ Destroy best-effort 模式清晰：`downErr` 與 `cleanupErr` 分別賦值，兩步驟之間無 early return，`downErr` 優先回傳並有明確理由（Docker daemon 根本原因）
+4. ✅ 錯誤處理注意事項已更新為「不額外以 `fmt.Errorf` 包裝，否則造成 double-wrap」
+5. ✅ 輪詢次數統一為「24 次 tick」（規格第 4 步與 `TestStart_HealthTimeout` 一致）
+
+遺留 🟡 項目（Round 1 #4–#8）未在本次修正範圍內，均為非阻擋性建議，可在後續實作 task 或 PR 中處理。實作可基於此文件進行。
+
+---
+
+**[Round 1] 狀態：REVISE**
+
+**意見：**
+
+整體設計架構清晰，方法職責分離正確，embedded static template 策略合理，health polling 選用 `time.NewTicker` + `ctx.Done()` 而非 `time.Sleep` 是正確做法。但以下問題必須修正後才可 APPROVE。
+
+---
+
+**🔴 必修（阻擋 APPROVE）**
+
+**1. `AdapterError` 與 `StartError` 欄位名稱錯誤**
+
+設計文件全篇使用 `Cause` 欄位（例如 `&domain.AdapterError{Operation: "create", Slug: project.Slug, Err: err}`），但 `runtime_adapter.go` 中兩個型別的欄位實際上都是 `Err`：
+
+```go
+// 實際定義（runtime_adapter.go）
+type AdapterError struct { Operation string; Slug string; Err error }
+type StartError   struct { Slug string; Health *ProjectHealth; Err error }
+```
+
+文件中所有 `Cause: err` 均需改為 `Err: err`。此錯誤若直接進入實作會造成編譯失敗。
+
+**2. Destroy 流程描述自相矛盾**
+
+流程步驟 3 說「若 runner 失敗 → 回傳 `AdapterError`」（隱含 early return），步驟 4 又說「Step 4 無論 Step 2 是否成功都執行」。兩者矛盾——若 step 3 直接 return，step 4 永遠不會執行。
+
+應明確選擇一種策略並清楚描述控制流程，建議：
+
+```
+2. runner.Run("down -v --remove-orphans")  → 記錄 downErr（不 early return）
+3. os.RemoveAll(projectDir)               → 記錄 cleanErr（不 early return）
+4. 若 downErr != nil → 回傳 downErr（AdapterError{Operation:"destroy"}）
+5. 若 cleanErr != nil → 回傳 cleanErr（AdapterError{Operation:"destroy:cleanup"}）
+6. 回傳 nil
+```
+
+**3. `TestCreate_RendererError` 測試斷言描述錯誤**
+
+測試說「renderer 失敗 → 回傳 AdapterError，**不建立目錄**」，但依 Create 流程，`os.MkdirAll` 在 step 2 就執行，renderer.Render 在 step 3 才呼叫——renderer 失敗時目錄**已存在**。後置條件說明（「目錄可能殘留」）正確，但測試描述矛盾，實作者會寫出錯誤斷言。需修正測試案例說明為「renderer 失敗 → 回傳 AdapterError，目錄可能已建立」。
+
+---
+
+**🟡 建議修正（不阻擋但應說明）**
+
+**4. Stop 指令與介面合約不一致**
+
+`runtime_adapter.go` 介面註解說 Stop 執行 `docker compose down (no -v)`，但設計文件實作為 `docker compose stop`。兩者行為不同：`stop` 保留容器（較快重啟），`down` 移除容器。設計選用 `stop` 語意上更正確，但應在文件中明確說明此偏離（或請求更新介面定義的 comment）。
+
+**5. `RenderConfig` 忽略 `ctx` 與 `project` 參數**
+
+`RenderConfig(ctx, project, config)` 的委派為 `return renderer.Render(config)`，`ctx` 與 `project` 未使用。若 renderer 是純計算這沒問題，但應加一行說明（`_ = ctx` 的處理或 renderer 介面不接受 ctx 的理由），避免實作者困惑。
+
+**6. Start 逾時 120s 與 Phase Plan 建議 5 分鐘有落差**
+
+Phase 2 Plan 的風險表明確記載「Supabase 服務冷啟動較慢，建議預設 timeout 5 分鐘」，但設計 hard-code 120s。開放議題 #2 已標記為低優先，建議至少在文件中補充冷啟動（first-time image pull）場景下 120s 不足的說明，並說明 Phase 2 接受此限制的理由（例如「假設 pull 已在 Create 前完成」或「Phase 5 再參數化」）。
+
+**7. `parseComposePS` 未定義 `State == "restarting"` 的映射**
+
+`restarting` 在語意上最接近 `ServiceStatusStarting`，不應落入 `ServiceStatusUnknown`。建議明確補充此映射。
+
+**8. NDJSON 格式版本邊界**
+
+開放議題 #4 已記載「v2.17+ 才是 NDJSON」，但沒有說明舊版輸出為 JSON Array 時 parser 的行為（靜默失敗 vs 明確錯誤）。建議補充：若第一行無法作為 JSON object 解析，可考慮 fallback 偵測並回傳明確的版本不支援錯誤。
+
+---
+
+**✅ 確認正確的設計決策**
+
+- `ComposeAdapter` 不擁有 PortAllocator，僅接收 renderer；PortAllocator 由 use-case 層呼叫 ✅
+- `RenderConfig` 為純計算（不寫磁碟）與 `ApplyConfig` 的職責分離正確 ✅
+- `Create` 不執行 `docker compose`，純磁碟操作，不依賴 Docker daemon ✅
+- Embedded static template + `.env` env-var 替換，避免 Go template 在 YAML 中的轉義問題 ✅
+- `fakeCmdRunner` 以 white-box constructor 注入，`t.TempDir()` 作為真實 FS 測試 ✅
+- `IsHealthy()` 在 Services 為空時回傳 false，Start 輪詢可正確處理容器尚未建立的狀態 ✅
+- 靜態介面斷言 `var _ domain.RuntimeAdapter = (*ComposeAdapter)(nil)` ✅
 
 ### Reviewer B（實作）
 
-（待審）
+**[Round 2] 狀態：APPROVED**
+**意見：**
+
+五個前輪問題全數確認修正。Mock nil guard 正確。另發現一個新 🟡 小問題，不阻擋 APPROVE。
+
+---
+
+**✅ 前輪 5 項問題確認修正**
+
+- **[B1] ✅** 所有 `AdapterError` / `StartError` 初始化均使用 `Err:`，doc 主體中無 `Cause:` 殘留。
+- **[B2] ✅** Create 流程已調整為「renderer.Render → MkdirAll」；`TestCreate_RendererError` 說明同步更新為「不建立目錄（因 Render 在 MkdirAll 之前）」，邏輯自洽。
+- **[B3] ✅** Destroy 流程明確使用 `downErr` / `cleanupErr` 分開賦值，兩步驟之間無 early return，`downErr` 優先回傳並附帶理由（Docker daemon 根本原因）。
+- **[B4] ✅** 錯誤處理注意事項已更正：「直接以 `&domain.AdapterError{...}` 初始化即可，不額外以 `fmt.Errorf` 包裝（否則造成 double-wrap）」。
+- **[B5] ✅** 流程（步驟 4）與 `TestStart_HealthTimeout` 均一致使用「24 次 tick」。
+
+---
+
+**✅ Mock nil guard 確認**
+
+`fakeCmdRunner.Run` 於 `f.RunFn != nil` 後才呼叫，default 回傳 `nil, nil`；`mockConfigRenderer.Render` 同樣於 `m.RenderFn != nil` 後才呼叫，default 回傳標準 `.env` artifact。兩者 nil guard 正確，與 `MockRuntimeAdapter` 風格一致。
+
+---
+
+**🟡 [B6] 錯誤處理表「renderer.Render 失敗」條目與流程/測試不一致（建議修正）**
+
+- **錯誤處理表（§錯誤處理，第 1 行）**：`renderer.Render 失敗 → 直接回傳 renderer error（Create/ApplyConfig）`
+- **Create 流程 step 7**：`任何步驟失敗回傳 &domain.AdapterError{Operation: "create", ...}`
+- **`TestCreate_RendererError` 測試描述**：「renderer 失敗 → 回傳 AdapterError」
+
+表格說「直接回傳 renderer error（不包裝）」，但流程說明與測試案例都說回傳 `AdapterError`。兩者矛盾，實作者會困惑。建議將錯誤表該行修正為：
+
+```
+renderer.Render 失敗 | &domain.AdapterError{Operation: "create"/"apply-config", Err: rendererErr}
+（RenderConfig 為 pass-through，不包裝）
+```
+
+此問題不阻擋 APPROVE（流程與測試本身一致，錯誤在表格），但需在實作前修正以免產生歧義。
+
+---
+
+**[Round 1] 狀態：REVISE**
+**意見：**
+
+整體結構清晰，struct 設計可建置，`cmdRunner` 介面完整可測，NDJSON 解析策略正確，健康輪詢 `time.NewTicker + select` 模式正確，靜態介面斷言存在，`t.TempDir()` 策略充分，`fakeCmdRunner` / `mockConfigRenderer` 的 nil guard 與 `MockRuntimeAdapter` 風格一致。但以下三個 **Blocker** 與兩個 **Major** 問題必須修正後才能進入實作。
+
+---
+
+**🔴 [B1] `AdapterError` / `StartError` struct 欄位名稱錯誤（Compile-Time Blocker）**
+
+設計中所有錯誤構造範例均使用 `Cause:` 欄位（例如 `&domain.AdapterError{Operation: "create", Slug: project.Slug, Err: err}`），但 `runtime_adapter.go` 中 `AdapterError` 與 `StartError` 的底層錯誤欄位實際名稱為 `Err`，而非 `Cause`：
+
+```go
+// runtime_adapter.go
+type AdapterError struct {
+    Operation string
+    Slug      string
+    Err       error   // ← 欄位名為 Err，非 Cause
+}
+
+type StartError struct {
+    Slug   string
+    Health *ProjectHealth
+    Err    error   // ← 欄位名為 Err，非 Cause
+}
+```
+
+設計文件中 **全部** 涉及 `AdapterError` 與 `StartError` 初始化的程式碼片段（流程描述與錯誤表共 8 處）須將 `Cause:` 改為 `Err:`。此問題會導致每個方法的實作在編譯時直接失敗。
+
+---
+
+**🔴 [B2] `TestCreate_RendererError` 斷言「不建立目錄」與流程矛盾**
+
+Create 流程為：
+
+1. 計算 `projectDir`
+2. **`os.MkdirAll(projectDir, 0700)`** ← 目錄在此建立
+3. 呼叫 `renderer.Render(config)` ← renderer 在此失敗
+
+當 renderer 失敗（步驟 3）時，目錄**已在步驟 2 建立**。測試案例 `TestCreate_RendererError` 描述「renderer 失敗 → 回傳 AdapterError，不建立目錄」中的「不建立目錄」斷言是錯的，實際跑測試時會失敗。
+
+修正方案（擇一）：
+- **方案 A（建議）**：將流程改為先 `renderer.Render` 再 `os.MkdirAll`，使失敗時確實不建立目錄，並更新測試描述。
+- **方案 B**：保留現有流程（MkdirAll 先），將測試描述改為「回傳 AdapterError；目錄可能已建立（不做 cleanup）」。
+
+---
+
+**🔴 [B3] Destroy 流程自我矛盾（early return vs. best-effort cleanup）**
+
+Destroy 流程的步驟 3 寫道：「若 runner 失敗 → `return &domain.AdapterError{...}`」，這是 early return。  
+但流程末尾的注意事項寫道：「Step 4 無論 Step 2 是否成功都執行（attempt best-effort cleanup）」。
+
+兩者互相矛盾：若步驟 3 直接 return，步驟 4 的 `os.RemoveAll` 永遠不會執行。設計必須明確描述實作模式，例如：
+
+```go
+// 建議的 pseudo-code
+downErr := runner.Run(ctx, projectDir, "docker", "compose", "down", "-v", "--remove-orphans")
+if rmErr := os.RemoveAll(projectDir); rmErr != nil {
+    return &domain.AdapterError{Operation: "destroy:cleanup", Slug: project.Slug, Err: rmErr}
+}
+if downErr != nil {
+    return &domain.AdapterError{Operation: "destroy", Slug: project.Slug, Err: downErr}
+}
+return nil
+```
+
+同時需要說明：若 down 失敗且 RemoveAll 也失敗，回傳哪個錯誤（建議回傳 RemoveAll 的 cleanup 錯誤，因為它更持久且需要人工介入）。
+
+---
+
+**🟡 [B4] `fmt.Errorf` 包裝說明有誤（會造成 double-wrap）**
+
+錯誤處理表末尾的注意事項：
+> 所有 `AdapterError` 均以 `fmt.Errorf("compose adapter %s %q: %w", op, slug, cause)` 形式 wrap。
+
+這與 `AdapterError.Error()` 的實作衝突：`AdapterError` 本身已透過 `Error()` 方法格式化輸出（`"adapter %s failed for project %q: %v"`）。若實作者先 `fmt.Errorf(...)` 包裝再放入 `Err` 欄位，將造成訊息被雙重包裝（`"adapter destroy failed for project "x": compose adapter destroy "x": original error"`）。
+
+應將此注意事項刪除，或改為：「`AdapterError.Err` 欄位存放原始 cause；格式化輸出由 `AdapterError.Error()` 負責，無需額外 `fmt.Errorf` 包裝。」
+
+---
+
+**🟡 [B5] `TestStart_HealthTimeout` 輪詢次數與規格不一致**
+
+規格說「至多 24 次」（24 × 5s = 120s），但 `TestStart_HealthTimeout` 描述「輪詢 25 次（逾時）」。  
+- 若 fakeCmdRunner 設計為回傳 unhealthy 25 次，而實際最多只輪詢 24 次，第 25 次永遠不會被呼叫，`Calls` 只有 24 筆，斷言 25 次會失敗。  
+- 請統一：規格與測試都使用 24（或改規格為 "不超過 24 次 tick 後逾時"，測試 runner 只需被呼叫 ≥ 1 次並確認回傳 `StartError` 即可）。
+
+---
+
+**✅ 實作亮點**
+
+- `var _ domain.RuntimeAdapter = (*ComposeAdapter)(nil)` 靜態介面斷言存在 ✅  
+- `fakeCmdRunner` / `mockConfigRenderer` nil guard 與 `MockRuntimeAdapter` 風格一致 ✅  
+- `time.NewTicker + select` 健康輪詢模式正確，可正確偵測 context 取消 ✅  
+- NDJSON 解析策略（逐行 decode + warn-and-skip 機制）技術上正確 ✅  
+- `t.TempDir()` 無外部 fs 依賴，`newComposeAdapterWithRunner` white-box constructor 設計正確 ✅  
+- `RenderConfig` 不包裝 `AdapterError` 的設計理由清晰 ✅  
+- `os.WriteFile` 用於 embedded template，`composeTemplate` `//go:embed` 設計完整 ✅
