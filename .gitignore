@@ -1,8 +1,8 @@
 .env
-volumes/
+/volumes/
 projects/
 projects/*/.env
-projects/*/volumes/sbctl
+projects/*/volumes/
 control-plane/sbctl
 /sbctl
 .sbctl.env

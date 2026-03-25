@@ -25,7 +25,7 @@ services:
       # Binds nestjs listener to both IPv4 and IPv6 network interfaces
       HOSTNAME: "::"
 
-      STUDIO_PG_META_URL: http://meta:28080
+      STUDIO_PG_META_URL: http://meta:${PG_META_PORT}
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -385,7 +385,7 @@ services:
         # Disable this if you are using an external Postgres database
         condition: service_healthy
     environment:
-      PG_META_PORT: 28080
+      PG_META_PORT: ${PG_META_PORT}
       PG_META_DB_HOST: ${POSTGRES_HOST}
       PG_META_DB_PORT: ${POSTGRES_PORT}
       PG_META_DB_NAME: ${POSTGRES_DB}
