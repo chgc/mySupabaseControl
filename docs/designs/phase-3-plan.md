@@ -37,9 +37,9 @@ Phase 3 完成後，Control Plane 應能透過兩種操作介面管理完整的 
 
 | # | 功能名稱 | 設計文件路徑 | 狀態 | 說明 |
 |---|----------|-------------|------|------|
-| 1 | Use-case 層 | `docs/designs/phase_3/usecase-layer.md` | 未開始 | `internal/usecase/` — `ProjectService`，聚合 domain + store + adapter |
-| 2 | CLI (`sbctl`) | `docs/designs/phase_3/cli-sbctl.md` | 未開始 | `cmd/sbctl/` — Cobra CLI，7 個 project 子命令，`--output table/json/yaml` |
-| 3 | MCP Server | `docs/designs/phase_3/mcp-server.md` | 未開始 | `sbctl mcp serve` — stdio transport，暴露 7 個 MCP tools |
+| 1 | Use-case 層 | `docs/designs/phase_3/usecase-layer.md` | ✅ done | `internal/usecase/` — `ProjectService`，聚合 domain + store + adapter |
+| 2 | CLI (`sbctl`) | `docs/designs/phase_3/cli-sbctl.md` | ✅ done | `cmd/sbctl/` — Cobra CLI，8 個 project 子命令，`--output table/json/yaml` |
+| 3 | MCP Server | `docs/designs/phase_3/mcp-server.md` | ✅ done | `sbctl mcp serve` — stdio transport，暴露 7 個 MCP tools |
 
 ---
 
@@ -73,18 +73,18 @@ Phase 3 完成後，Control Plane 應能透過兩種操作介面管理完整的 
 
 ### 設計階段
 
-- [ ] 所有功能的設計文件狀態為 `approved`（通過兩位 reviewer 審查）
-  - [ ] `usecase-layer.md` — approved
-  - [ ] `cli-sbctl.md` — approved
-  - [ ] `mcp-server.md` — approved
+- [x] 所有功能的設計文件狀態為 `approved`（通過兩位 reviewer 審查）
+  - [x] `usecase-layer.md` — approved（三輪）
+  - [x] `cli-sbctl.md` — approved（兩輪）
+  - [x] `mcp-server.md` — approved（兩輪）
 
 ### 實作階段
 
 | 任務 ID | 說明 | 狀態 |
 |---------|------|------|
-| `impl-usecase` | 實作 `internal/usecase/` Use-case 層 | 未開始 |
-| `impl-cli` | 實作 `cmd/sbctl/` CLI | 未開始 |
-| `impl-mcp` | 實作 MCP Server（`sbctl mcp serve`） | 未開始 |
+| `impl-usecase` | 實作 `internal/usecase/` Use-case 層 | ✅ 完成 |
+| `impl-cli` | 實作 `cmd/sbctl/` CLI | ✅ 完成 |
+| `impl-mcp` | 實作 MCP Server（`sbctl mcp serve`） | ✅ 完成 |
 
 ### Phase 整合驗證
 

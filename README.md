@@ -1,167 +1,157 @@
-# Local Supabase with Docker (Multi-Projects)
+# mySupabaseControl
 
-This workspace runs self-hosted Supabase locally and now supports running multiple isolated projects at the same time.
+> 在本機以 Docker 自架並管理多個獨立 Supabase 實例的工作空間，搭配 **`sbctl`** Control Plane CLI 提供完整的專案生命週期管理，並支援 MCP Server 模式供 AI agent 整合。
 
-## Cross-platform commands via just
+## 目錄
 
-This repo uses `justfile` as the main command interface.
+- [架構概覽](#架構概覽)
+- [快速開始](#快速開始)
+- [just 指令（傳統操作）](#just-指令傳統操作)
+- [sbctl — Control Plane CLI](#sbctl--control-plane-cli)
+- [MCP Server（AI Agent 整合）](#mcp-serverai-agent-整合)
+- [專案結構](#專案結構)
+- [開發路線圖](#開發路線圖)
 
-- `just` auto-detects OS and dispatches to the right script.
-- Windows calls PowerShell scripts.
-- macOS/Linux calls Bash scripts.
-- On macOS/Linux, you do **not** need to install PowerShell.
+---
 
-Install `just`:
+## 架構概覽
 
-```bash
-brew install just
+```
+CLI (sbctl)          MCP Server           Telegram Bot
+本機終端操作          AI agent 工具         手機遠端控制（Phase 4）
+     │               (stdio)                    │
+     └───────────────────┬───────────────────────┘
+                         │
+           ┌─────────────▼─────────────┐
+           │       Use-case 層          │
+           │  create / start / stop /  │
+           │  reset / delete / list    │
+           └──────┬────────────────────┘
+                  │
+     ┌────────────▼─────────────────────────┐
+     │           Control Plane              │
+     │  ProjectRegistry + ConfigSchema      │
+     │  ┌─────────────────────────────────┐ │
+     │  │     Runtime Adapter 介面         │ │
+     │  └──────┬─────────────┬────────────┘ │
+     │         │             │              │
+     │  Docker Compose    K8s Adapter       │
+     │  Adapter（現在）    （Phase 6）        │
+     └──────────────────────────────────────┘
 ```
 
-```powershell
+詳細架構說明請參閱 [`docs/CONTROL_PLANE.md`](./docs/CONTROL_PLANE.md)。
+
+---
+
+## 快速開始
+
+### 前置需求
+
+- Docker（已安裝且 daemon 執行中）
+- Go 1.22+
+- [`just`](https://github.com/casey/just)
+
+```bash
+# macOS/Linux
+brew install just
+
+# Windows
 winget install --id Casey.Just --exact
 ```
 
-## Project layout
-
-- `docker-compose.yml` is the shared base stack.
-- `projects/<project>/.env` stores each project's runtime settings.
-- `projects/<project>/volumes` stores each project's local data.
-
-Create a new project from the base `.env`:
+### 安裝 sbctl（建議方式）
 
 ```bash
+# 一鍵設定：啟動 Control Plane DB、套用 migration、建置 binary
+just cp-setup
+```
+
+完成後依照輸出設定環境變數，或建立 `.sbctl.env`（程式啟動時自動載入）：
+
+```bash
+SBCTL_DB_URL=postgresql://postgres:sbctl_secret@localhost:5433/sbctl
+SBCTL_PROJECTS_DIR=./projects
+```
+
+---
+
+## just 指令（傳統操作）
+
+`justfile` 提供跨平台（macOS/Linux/Windows）的薄層操作介面，自動分派到對應的 shell 腳本。
+
+```bash
+# 建立新專案（手動指定 ports）
 just new-project project-a 28081 5432 6543
 just new-project project-b 38081 15432 16543
-```
 
-Included examples:
-
-- `projects/project-a/.env`
-- `projects/project-b/.env`
-
-## Start a project
-
-```bash
+# 啟動 / 停止 / 狀態
 just up project-a
-```
-
-Start another project in parallel:
-
-```bash
-just up project-b
-```
-
-## Stop a project
-
-```bash
 just down project-a
-```
+just ps project-a
 
-## Reset one project only
-
-```bash
+# 重置（清除資料並重建 volumes）
 just reset project-a
-```
 
-See all commands:
+# Control Plane 相關
+just cp-setup               # 一鍵安裝（建議）
+just cp-build               # 只重新建置 binary
+just cp-test                # 執行單元測試
+just cp-test-integration    # 執行整合測試（需 DB）
+just cp-lint                # 執行 golangci-lint
 
-```bash
+# 列出所有指令
 just --list
 ```
 
-This command:
+### Port 對照
 
-- Stops only `supabase-project-a`
-- Removes only that project's containers and volumes
-- Recreates only that project's `db/data` and `storage` folders
+| 專案 | Studio / Kong | Postgres | Pooler |
+|------|--------------|----------|--------|
+| project-a | `28081` | `5432` | `6543` |
+| project-b | `38081` | `15432` | `16543` |
 
-## URLs and ports
-
-Read each project's `.env`:
-
-- `KONG_HTTP_PORT` controls API gateway URL (`http://localhost:<KONG_HTTP_PORT>`)
-- `POSTGRES_PORT` controls direct Postgres port
-- `POOLER_PROXY_PORT_TRANSACTION` controls pooler transaction port
-
-Example defaults:
-
-- project-a: `28081`, `5432`, `6543`
-- project-b: `38081`, `15432`, `16543`
-
-## Credentials and keys
-
-Each project has its own `.env` file.
-
-- Studio username: `supabase`
-- Studio password: `DASHBOARD_PASSWORD`
-- Client API key: `ANON_KEY`
-- Service role key: `SERVICE_ROLE_KEY`
-
-## Quick checks
-
-```powershell
-just ps project-a
-Invoke-WebRequest http://localhost:28081/auth/v1/health -Headers @{ apikey = '<ANON_KEY>'; Authorization = 'Bearer <ANON_KEY>' }
-```
-
-## Notes
-
-- This setup is for local development, not production hardening.
-- Fixed `container_name` entries were removed so multiple projects can run without name collisions.
-- Writable bind mounts are now project-scoped via `PROJECT_DATA_DIR`.
+`KONG_HTTP_PORT`、`POSTGRES_PORT`、`POOLER_PROXY_PORT_TRANSACTION` 均定義於各專案的 `projects/<slug>/.env`。
 
 ---
 
 ## sbctl — Control Plane CLI
 
-`sbctl` 是 Control Plane 的命令列工具，可程式化地管理 Supabase 專案的完整生命週期，並支援 MCP Server 模式供 AI agent 使用。
+`sbctl`（**S**upa**b**ase **C**on**t**ro**l**）是 Control Plane 的 Go CLI，自動管理 port 分配、secret 產生與完整的容器生命週期。
 
-### 前置需求
-
-- Docker（已安裝且 daemon 在執行中）
-- Go 1.22+（用來建置 binary）
-
-### 一鍵安裝
+### 基本用法
 
 ```bash
-just cp-setup
-```
+# 建立並啟動新專案（自動分配 ports 與 secrets）
+./sbctl project create my-project --display-name "My Project"
 
-這個指令會自動：
-1. 啟動 Control Plane 專用 PostgreSQL container（port 5433）
-2. 套用 DB migration（建立 `projects` / `project_configs` / `project_overrides` 表）
-3. 建置 `./sbctl` binary
-
-完成後依照輸出設定環境變數：
-
-```bash
-export SBCTL_DB_URL="postgresql://postgres:sbctl_secret@localhost:5433/sbctl"
-export SBCTL_PROJECTS_DIR="./projects"
-```
-
-### 使用方式
-
-```bash
 # 列出所有專案
 ./sbctl project list
 
-# 建立並啟動新專案（需 Docker）
-./sbctl project create my-project --display-name "My Project"
-
-# 查看專案狀態
+# 查詢專案詳情（URLs、狀態、健康度）
 ./sbctl project get my-project
+
+# 查看連線 credentials（含未遮罩的 API keys）
+./sbctl project credentials my-project
 
 # 停止 / 啟動 / 重置 / 刪除
 ./sbctl project stop my-project
 ./sbctl project start my-project
 ./sbctl project reset my-project
 ./sbctl project delete my-project
+```
 
-# JSON 輸出
+### 輸出格式
+
+```bash
+# Table（預設，適合終端機）
+./sbctl project list
+
+# JSON（適合腳本與 AI agent 解析）
 ./sbctl -o json project list
 
-# 啟動 MCP Server（供 AI agent 使用，stdio transport）
-./sbctl mcp serve
+# YAML
+./sbctl -o yaml project get my-project
 ```
 
 ### 進階安裝選項
@@ -176,3 +166,89 @@ just cp-setup --no-build
 # 重置 DB（清除所有資料並重建）
 just cp-setup --reset-db
 ```
+
+---
+
+## MCP Server（AI Agent 整合）
+
+`sbctl mcp serve` 以 stdio transport 啟動 MCP Server，讓 GitHub Copilot、Claude Desktop、Cursor 等 AI 工具直接管理 Supabase 專案。
+
+```bash
+./sbctl mcp serve
+```
+
+### 可用 MCP Tools
+
+| Tool | 說明 |
+|------|------|
+| `list_projects` | 列出所有專案及其狀態 |
+| `get_project` | 取得單一專案詳情（credentials、URLs、健康狀態） |
+| `create_project` | 建立新專案（自動 port 分配、secret 產生） |
+| `start_project` | 啟動專案服務 |
+| `stop_project` | 停止專案服務 |
+| `reset_project` | 重置專案（清除資料） |
+| `delete_project` | 刪除專案 |
+
+### 整合範例（Claude Desktop / Cursor）
+
+在 MCP 設定檔中加入：
+
+```json
+{
+  "mcpServers": {
+    "sbctl": {
+      "command": "/path/to/sbctl",
+      "args": ["mcp", "serve"],
+      "env": {
+        "SBCTL_DB_URL": "postgresql://postgres:sbctl_secret@localhost:5433/sbctl",
+        "SBCTL_PROJECTS_DIR": "/path/to/projects"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 專案結構
+
+```
+mySupabaseControl/
+├── control-plane/          # Go CLI + MCP Server（sbctl binary）
+│   ├── cmd/sbctl/          # Cobra CLI entry point
+│   ├── internal/
+│   │   ├── adapter/compose/  # Docker Compose RuntimeAdapter 實作
+│   │   ├── domain/           # 領域模型、介面定義
+│   │   ├── store/postgres/   # PostgreSQL state store
+│   │   └── usecase/          # Use-case 層（業務邏輯）
+│   └── migrations/           # DB migration SQL
+├── docs/                   # 架構文件與設計文件
+│   ├── CONTROL_PLANE.md    # 架構與路線圖
+│   ├── REVIEW_GATEWAY.md   # 設計審查流程
+│   └── designs/            # 各 Phase 設計文件
+├── scripts/                # 安裝腳本（setup-control-plane.sh 等）
+├── projects/               # 各專案 .env 與 volumes（git 忽略）
+├── docker-compose.yml      # Supabase 基底 stack
+├── justfile                # 跨平台指令入口
+└── sbctl                   # 已建置的 binary（git 忽略）
+```
+
+---
+
+## 開發路線圖
+
+| Phase | 說明 | 狀態 |
+|-------|------|------|
+| **0** | High-Level Design Discussion | ✅ 完成 |
+| **1** | 定義 Runtime 無關的 Control Plane 模型 | ✅ 完成 |
+| **2** | Docker Compose Runtime Adapter | ✅ 完成 |
+| **3** | Use-case 層、sbctl CLI、MCP Server | ✅ 完成 |
+| **4** | Telegram Bot 遠端控制 | 🔜 規劃中 |
+| **5** | CLI UX 改善與 AI Agent 整合優化 | 🔜 規劃中 |
+| **6** | K8s Runtime Adapter（Mac Mini） | 🔜 規劃中 |
+
+詳細設計文件：[`docs/CONTROL_PLANE.md`](./docs/CONTROL_PLANE.md)
+
+---
+
+> 本設定僅供本機開發使用，非 production 環境強化方案。

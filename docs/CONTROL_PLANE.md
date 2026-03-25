@@ -121,7 +121,7 @@ Runtime Adapter 必須抽象化上述所有差異。
 4. **Phase 1–5 的 deliverables 不需調整。** 設定 Schema 可在 Phase 1 設計時區分「全域設定」與「每專案設定」。
 5. **每個完整專案約需 0.7–1.6 GB RAM、12–13 個容器。**
 
-### Phase 1 — 定義 Runtime 無關的 Control Plane 模型
+### Phase 1 — 定義 Runtime 無關的 Control Plane 模型 ✅
 
 > **Phase Plan：** `docs/designs/phase_1/phase-1-plan.md`
 > **審查狀態：✅ 全部通過（REVIEW_GATEWAY 兩位審查者均 APPROVE）**
@@ -180,9 +180,25 @@ Runtime Adapter 必須抽象化上述所有差異。
 - 保留 `justfile` 作為薄層的操作快捷方式，委派給 Control Plane。
 - 現有 PS1/Bash 腳本成為參考實作後棄用。
 
-### Phase 3 — Use-case 層、CLI (`sbctl`) 與 MCP Server
+### Phase 3 — Use-case 層、CLI (`sbctl`) 與 MCP Server ✅
 
-> **Phase Plan：** `docs/designs/phase-3-plan.md`（待建立）
+> **Phase Plan：** `docs/designs/phase-3-plan.md`
+> **審查狀態：✅ 全部通過（REVIEW_GATEWAY 兩位審查者均 APPROVE，代碼審查 PASS）**
+>
+> | 文件 | 狀態 |
+> |------|------|
+> | `docs/designs/phase_3/usecase-layer.md` | ✅ done（三輪審查） |
+> | `docs/designs/phase_3/cli-sbctl.md` | ✅ done（兩輪審查） |
+> | `docs/designs/phase_3/mcp-server.md` | ✅ done（兩輪審查） |
+>
+> **實作產出：**
+> - `control-plane/internal/usecase/project_service_impl.go` — ProjectService（聚合 domain + store + adapter）
+> - `control-plane/cmd/sbctl/project.go` — Cobra CLI，8 個 project 子命令（含 `credentials`）
+> - `control-plane/cmd/sbctl/mcp.go` — MCP Server（stdio transport，7 個 MCP tools）
+> - `control-plane/cmd/sbctl/output.go` — table / json / yaml 輸出格式化
+> - `control-plane/cmd/sbctl/deps.go` — 依賴注入（DB、adapter、service 組裝）
+> - `.sbctl.env` 自動載入、DB migration 冪等執行
+> - 完整 Supabase stack 的 docker-compose.yml 模板（嵌入於 binary）
 
 本 Phase 提供 Use-case 層與兩種操作介面，**無 HTTP Server、無 Web UI**：
 
