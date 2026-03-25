@@ -38,13 +38,15 @@ func NewProjectRepository(pool *pgxpool.Pool) *ProjectRepository {
 }
 
 // Create inserts a new project row.
-// Returns store.ErrProjectAlreadyExists on slug uniqueness violation.
+// If a destroyed row already exists with the same slug, it and its associated
+// config rows are replaced within a transaction so slugs can be reused after deletion.
+// Returns store.ErrProjectAlreadyExists if an active (non-destroyed) row exists.
 func (r *ProjectRepository) Create(ctx context.Context, project *domain.ProjectModel) error {
-	const q = `
+	const insertQ = `
 		INSERT INTO projects (slug, display_name, status, previous_status, last_error, created_at, updated_at)
 		VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7)`
 
-	_, err := r.db.Exec(ctx, q,
+	_, err := r.db.Exec(ctx, insertQ,
 		project.Slug,
 		project.DisplayName,
 		string(project.Status),
@@ -53,10 +55,54 @@ func (r *ProjectRepository) Create(ctx context.Context, project *domain.ProjectM
 		project.CreatedAt,
 		project.UpdatedAt,
 	)
-	if err != nil {
-		return mapPgError(err)
+	if err == nil {
+		return nil
 	}
-	return nil
+
+	mappedErr := mapPgError(err)
+	if !errors.Is(mappedErr, store.ErrProjectAlreadyExists) {
+		return mappedErr
+	}
+
+	// Unique violation: check whether the existing row is destroyed.
+	// If so, purge it (and its config) and retry the insert within a transaction.
+	const statusQ = `SELECT status FROM projects WHERE slug = $1`
+	var existingStatus string
+	if scanErr := r.db.QueryRow(ctx, statusQ, project.Slug).Scan(&existingStatus); scanErr != nil {
+		return mapPgError(scanErr)
+	}
+	if existingStatus != string(domain.StatusDestroyed) {
+		return store.ErrProjectAlreadyExists
+	}
+
+	// Replace the destroyed row inside a transaction.
+	tx, txErr := r.db.Begin(ctx)
+	if txErr != nil {
+		return mapPgError(txErr)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if _, txErr = tx.Exec(ctx, `DELETE FROM project_overrides WHERE project_slug = $1`, project.Slug); txErr != nil {
+		return mapPgError(txErr)
+	}
+	if _, txErr = tx.Exec(ctx, `DELETE FROM project_configs WHERE project_slug = $1`, project.Slug); txErr != nil {
+		return mapPgError(txErr)
+	}
+	if _, txErr = tx.Exec(ctx, `DELETE FROM projects WHERE slug = $1`, project.Slug); txErr != nil {
+		return mapPgError(txErr)
+	}
+	if _, txErr = tx.Exec(ctx, insertQ,
+		project.Slug,
+		project.DisplayName,
+		string(project.Status),
+		string(project.PreviousStatus),
+		project.LastError,
+		project.CreatedAt,
+		project.UpdatedAt,
+	); txErr != nil {
+		return mapPgError(txErr)
+	}
+	return mapPgError(tx.Commit(ctx))
 }
 
 // GetBySlug retrieves a project by its slug.

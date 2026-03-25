@@ -14,7 +14,7 @@ import (
 //go:embed templates/docker-compose.yml
 var composeTemplate []byte
 
-//go:embed templates/volumes
+//go:embed all:templates/volumes
 var volumesFS embed.FS
 
 // ComposeAdapter implements domain.RuntimeAdapter using Docker Compose v2.
