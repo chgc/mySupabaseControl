@@ -1,4 +1,5 @@
 .env
 volumes/
 projects/*/.env
-projects/*/volumes/
+projects/*/volumes/sbctl
+control-plane/sbctl
