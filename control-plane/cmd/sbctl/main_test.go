@@ -15,13 +15,14 @@ import (
 // --- mock ---
 
 type mockSvc struct {
-	CreateFn func(ctx context.Context, slug, displayName string) (*usecase.ProjectView, error)
-	ListFn   func(ctx context.Context) ([]*usecase.ProjectView, error)
-	GetFn    func(ctx context.Context, slug string) (*usecase.ProjectView, error)
-	StartFn  func(ctx context.Context, slug string) (*usecase.ProjectView, error)
-	StopFn   func(ctx context.Context, slug string) (*usecase.ProjectView, error)
-	ResetFn  func(ctx context.Context, slug string) (*usecase.ProjectView, error)
-	DeleteFn func(ctx context.Context, slug string) (*usecase.ProjectView, error)
+	CreateFn      func(ctx context.Context, slug, displayName string) (*usecase.ProjectView, error)
+	ListFn        func(ctx context.Context) ([]*usecase.ProjectView, error)
+	GetFn         func(ctx context.Context, slug string) (*usecase.ProjectView, error)
+	StartFn       func(ctx context.Context, slug string) (*usecase.ProjectView, error)
+	StopFn        func(ctx context.Context, slug string) (*usecase.ProjectView, error)
+	ResetFn       func(ctx context.Context, slug string) (*usecase.ProjectView, error)
+	DeleteFn      func(ctx context.Context, slug string) (*usecase.ProjectView, error)
+	CredentialsFn func(ctx context.Context, slug string) (*usecase.CredentialsView, error)
 }
 
 func (m *mockSvc) Create(ctx context.Context, slug, dn string) (*usecase.ProjectView, error) {
@@ -65,6 +66,24 @@ func (m *mockSvc) Delete(ctx context.Context, slug string) (*usecase.ProjectView
 		return m.DeleteFn(ctx, slug)
 	}
 	return stubView(slug, slug), nil
+}
+func (m *mockSvc) GetCredentials(ctx context.Context, slug string) (*usecase.CredentialsView, error) {
+	if m.CredentialsFn != nil {
+		return m.CredentialsFn(ctx, slug)
+	}
+	return &usecase.CredentialsView{
+		Slug:              slug,
+		StudioURL:         "http://localhost:54323",
+		DashboardUsername: "supabase",
+		DashboardPassword: "secret",
+		APIURL:            "http://localhost:54321",
+		AnonKey:           "anon-key",
+		ServiceRoleKey:    "service-role-key",
+		PostgresHost:      "localhost",
+		PostgresPort:      "54322",
+		PostgresDB:        "postgres",
+		PostgresPassword:  "pg-password",
+	}, nil
 }
 
 func stubView(slug, displayName string) *usecase.ProjectView {
@@ -294,4 +313,28 @@ func TestProjectDelete_ConfirmationMismatch(t *testing.T) {
 	if !strings.Contains(errOut, "aborting") {
 		t.Errorf("expected aborting message in stderr, got: %q", errOut)
 	}
+}
+
+func TestProjectCredentials_Table(t *testing.T) {
+root := newTestRootCmd(&mockSvc{})
+out, _, err := runCmd(t, root, []string{"project", "credentials", "myproj"}, "")
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+for _, want := range []string{"Studio URL", "Dashboard Username", "supabase", "anon-key"} {
+if !strings.Contains(out, want) {
+t.Errorf("expected %q in output, got: %q", want, out)
+}
+}
+}
+
+func TestProjectCredentials_JSON(t *testing.T) {
+root := newTestRootCmd(&mockSvc{})
+out, _, err := runCmd(t, root, []string{"--output", "json", "project", "credentials", "myproj"}, "")
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if !strings.Contains(out, `"anon_key"`) {
+t.Errorf("expected JSON key in output, got: %q", out)
+}
 }

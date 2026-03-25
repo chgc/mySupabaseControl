@@ -29,6 +29,7 @@ func buildProjectCmd(deps **Deps, output *string) *cobra.Command {
 		buildStopCmd(deps, output),
 		buildResetCmd(deps, output),
 		buildDeleteCmd(deps, output),
+		buildCredentialsCmd(deps, output),
 	)
 	return cmd
 }
@@ -174,4 +175,20 @@ func projectErr(cmd *cobra.Command, err error) error {
 	}
 	fmt.Fprintln(cmd.ErrOrStderr(), "Error:", err)
 	return &ExitError{Code: 2, Err: err}
+}
+
+func buildCredentialsCmd(deps **Deps, output *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "credentials <slug>",
+		Short: "Show admin credentials for a project (unmasked)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			slug := args[0]
+			cv, err := (*deps).ProjectService.GetCredentials(cmd.Context(), slug)
+			if err != nil {
+				return projectErr(cmd, err)
+			}
+			return writeCredentialsView(cmd.OutOrStdout(), *output, cv)
+		},
+	}
 }

@@ -74,3 +74,36 @@ func writeDeleteResult(w io.Writer, output string, slug string) error {
 		return nil
 	}
 }
+
+func writeCredentialsView(w io.Writer, output string, cv *usecase.CredentialsView) error {
+	switch output {
+	case "json":
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(cv)
+	case "yaml":
+		return yaml.NewEncoder(w).Encode(cv)
+	default: // table
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		rows := []struct{ k, v string }{
+			{"Studio URL", cv.StudioURL},
+			{"Dashboard Username", cv.DashboardUsername},
+			{"Dashboard Password", cv.DashboardPassword},
+			{"API URL", cv.APIURL},
+			{"Anon Key", cv.AnonKey},
+			{"Service Role Key", cv.ServiceRoleKey},
+			{"Postgres Host", cv.PostgresHost},
+			{"Postgres Port", cv.PostgresPort},
+			{"Postgres DB", cv.PostgresDB},
+			{"Postgres Password", cv.PostgresPassword},
+			{"Pooler Port", cv.PoolerPort},
+		}
+		for _, r := range rows {
+			if r.v != "" {
+				fmt.Fprintf(tw, "%s:\t%s\n", r.k, r.v)
+			}
+		}
+		return tw.Flush()
+	}
+}
+

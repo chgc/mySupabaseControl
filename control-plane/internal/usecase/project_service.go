@@ -49,6 +49,28 @@ type ProjectURLs struct {
 	Inbucket string `json:"inbucket"` // Email testing URL (dev only)
 }
 
+// CredentialsView contains all information needed to access a project's admin UI
+// and APIs. Sensitive values (passwords, keys) are returned in plain text.
+// Only expose this to trusted operators.
+type CredentialsView struct {
+	Slug    string `json:"slug"`
+	// Admin UI
+	StudioURL         string `json:"studio_url"`
+	DashboardUsername string `json:"dashboard_username"`
+	DashboardPassword string `json:"dashboard_password"`
+	// API access
+	APIURL         string `json:"api_url"`
+	AnonKey        string `json:"anon_key"`
+	ServiceRoleKey string `json:"service_role_key"`
+	// Direct DB access
+	PostgresHost     string `json:"postgres_host"`
+	PostgresPort     string `json:"postgres_port"`
+	PostgresDB       string `json:"postgres_db"`
+	PostgresPassword string `json:"postgres_password"`
+	// Supavisor (connection pooler)
+	PoolerPort string `json:"pooler_port"`
+}
+
 // UsecaseError is returned by all ProjectService methods.
 // It wraps lower-level errors (store, adapter, domain) with operation context.
 type UsecaseError struct {

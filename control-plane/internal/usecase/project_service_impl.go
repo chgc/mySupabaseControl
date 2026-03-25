@@ -46,6 +46,11 @@ type ProjectService interface {
 	// Config rows are retained for audit purposes (status = destroyed).
 	// Returns ErrCodeInvalidState if the project is not in a destroyable state.
 	Delete(ctx context.Context, slug string) (*ProjectView, error)
+
+	// GetCredentials returns the project's admin credentials in plain text,
+	// including dashboard password, API keys, and direct database access info.
+	// Returns ErrCodeNotFound if the project does not exist or is destroyed.
+	GetCredentials(ctx context.Context, slug string) (*CredentialsView, error)
 }
 
 // NewProjectService constructs a ProjectService with all dependencies.
@@ -402,7 +407,55 @@ func (s *projectService) setErrorAndLog(ctx context.Context, project *domain.Pro
 	}
 }
 
-// mapNotFoundErr maps store/domain not-found errors to ErrCodeNotFound.
+// --- GetCredentials ---
+
+func (s *projectService) GetCredentials(ctx context.Context, slug string) (*CredentialsView, error) {
+	project, err := s.projectRepo.GetBySlug(ctx, slug)
+	if err != nil {
+		return nil, mapNotFoundErr(slug, err)
+	}
+
+	config, err := s.configRepo.GetConfig(ctx, slug)
+	if err != nil {
+		if errors.Is(err, store.ErrConfigNotFound) {
+			return nil, &UsecaseError{
+				Code:    ErrCodeNotFound,
+				Message: fmt.Sprintf("project %q has no config", slug),
+			}
+		}
+		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to load config", Err: err}
+	}
+
+	get := func(key string) string {
+		v, _ := config.GetSensitive(key)
+		return v
+	}
+
+	kongPort := get("KONG_HTTP_PORT")
+	studioPort := get("STUDIO_PORT")
+
+	cv := &CredentialsView{
+		Slug:              project.Slug,
+		DashboardUsername: get("DASHBOARD_USERNAME"),
+		DashboardPassword: get("DASHBOARD_PASSWORD"),
+		AnonKey:           get("ANON_KEY"),
+		ServiceRoleKey:    get("SERVICE_ROLE_KEY"),
+		PostgresHost:      "localhost",
+		PostgresPort:      get("POSTGRES_PORT"),
+		PostgresDB:        get("POSTGRES_DB"),
+		PostgresPassword:  get("POSTGRES_PASSWORD"),
+		PoolerPort:        get("POOLER_PROXY_PORT_TRANSACTION"),
+	}
+	if kongPort != "" {
+		cv.APIURL = fmt.Sprintf("http://localhost:%s", kongPort)
+	}
+	if studioPort != "" {
+		cv.StudioURL = fmt.Sprintf("http://localhost:%s", studioPort)
+	}
+	return cv, nil
+}
+
+
 func mapNotFoundErr(slug string, err error) *UsecaseError {
 	if errors.Is(err, store.ErrProjectNotFound) || errors.Is(err, domain.ErrProjectNotFound) {
 		return &UsecaseError{
