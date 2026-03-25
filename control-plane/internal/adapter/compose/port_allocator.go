@@ -11,14 +11,13 @@ import (
 	"github.com/kevin/supabase-control-plane/internal/store"
 )
 
-// portBases holds the starting candidate port for each port type.
+// portBases holds the starting candidate port for each externally-exposed port type.
+// Internal container ports (PG_META_PORT, IMGPROXY_BIND) are excluded because each
+// project runs in its own isolated Docker network.
 type portBases struct {
 	kongHTTP     int
 	postgresPort int
 	poolerPort   int
-	studioPort   int
-	metaPort     int
-	imgProxyPort int
 }
 
 // defaultPortBases matches the base values documented in domain.PortSet.
@@ -26,9 +25,6 @@ var defaultPortBases = portBases{
 	kongHTTP:     28081,
 	postgresPort: 54320,
 	poolerPort:   64300,
-	studioPort:   54323,
-	metaPort:     54380,
-	imgProxyPort: 54381,
 }
 
 // ComposePortAllocator implements domain.PortAllocator using the config store and TCP probing.
@@ -122,9 +118,6 @@ func (a *ComposePortAllocator) AllocatePorts(ctx context.Context) (*domain.PortS
 		usedSet[portSet.KongHTTP+1] = struct{}{} // KongHTTPS is derived
 		usedSet[portSet.PostgresPort] = struct{}{}
 		usedSet[portSet.PoolerPort] = struct{}{}
-		usedSet[portSet.StudioPort] = struct{}{}
-		usedSet[portSet.MetaPort] = struct{}{}
-		usedSet[portSet.ImgProxyPort] = struct{}{}
 	}
 
 	// Step 3: allocate each port type.
@@ -146,32 +139,11 @@ func (a *ComposePortAllocator) AllocatePorts(ctx context.Context) (*domain.PortS
 	if err != nil {
 		return nil, err
 	}
-	usedSet[poolerPort] = struct{}{}
-
-	studioPort, err := a.findPort(ctx, a.bases.studioPort, usedSet, false)
-	if err != nil {
-		return nil, err
-	}
-	usedSet[studioPort] = struct{}{}
-
-	metaPort, err := a.findPort(ctx, a.bases.metaPort, usedSet, false)
-	if err != nil {
-		return nil, err
-	}
-	usedSet[metaPort] = struct{}{}
-
-	imgProxyPort, err := a.findPort(ctx, a.bases.imgProxyPort, usedSet, false)
-	if err != nil {
-		return nil, err
-	}
 
 	return &domain.PortSet{
 		KongHTTP:     kongHTTP,
 		PostgresPort: postgresPort,
 		PoolerPort:   poolerPort,
-		StudioPort:   studioPort,
-		MetaPort:     metaPort,
-		ImgProxyPort: imgProxyPort,
 	}, nil
 }
 

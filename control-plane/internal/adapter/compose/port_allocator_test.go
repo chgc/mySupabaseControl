@@ -26,9 +26,6 @@ func TestAllocatePorts_EmptyStore_UsesBasePorts(t *testing.T) {
 	assert.Equal(t, defaultPortBases.kongHTTP, portSet.KongHTTP)
 	assert.Equal(t, defaultPortBases.postgresPort, portSet.PostgresPort)
 	assert.Equal(t, defaultPortBases.poolerPort, portSet.PoolerPort)
-	assert.Equal(t, defaultPortBases.studioPort, portSet.StudioPort)
-	assert.Equal(t, defaultPortBases.metaPort, portSet.MetaPort)
-	assert.Equal(t, defaultPortBases.imgProxyPort, portSet.ImgProxyPort)
 }
 
 // ── AllocatePorts: skips occupied ports ───────────────────────────────────────
@@ -42,9 +39,6 @@ func TestAllocatePorts_SkipsUsedPorts(t *testing.T) {
 			"KONG_HTTP_PORT":                "28081",
 			"POSTGRES_PORT":                 "54320",
 			"POOLER_PROXY_PORT_TRANSACTION": "64300",
-			"STUDIO_PORT":                   "54323",
-			"PG_META_PORT":                  "54380",
-			"IMGPROXY_BIND":                 ":54381",
 		},
 	}
 
@@ -85,9 +79,6 @@ func TestAllocatePorts_SkipsOccupiedTCPPorts(t *testing.T) {
 				defaultPortBases.kongHTTP + 1,
 				defaultPortBases.postgresPort,
 				defaultPortBases.poolerPort,
-				defaultPortBases.studioPort,
-				defaultPortBases.metaPort,
-				defaultPortBases.imgProxyPort,
 			}
 			for _, b := range bases {
 				if port == b {
@@ -107,8 +98,8 @@ func TestAllocatePorts_SkipsOccupiedTCPPorts(t *testing.T) {
 // ── AllocatePorts: flat usedSet prevents cross-type collisions ────────────────
 
 func TestAllocatePorts_FlatUsedSet_PreventsCollision(t *testing.T) {
-	// Project A uses MetaPort=54381, which is imgProxyPort base.
-	// Without flat usedSet, ImgProxy would get 54381 (colliding with Meta).
+	// Project A uses PoolerPort=64300. KongHTTP base would otherwise collide with
+	// KongHTTPS (derived). This test verifies the flat usedSet marks KongHTTPS used.
 	projectA := &domain.ProjectModel{Slug: "beta"}
 	configA := &domain.ProjectConfig{
 		ProjectSlug: "beta",
@@ -116,9 +107,6 @@ func TestAllocatePorts_FlatUsedSet_PreventsCollision(t *testing.T) {
 			"KONG_HTTP_PORT":                "28081",
 			"POSTGRES_PORT":                 "54320",
 			"POOLER_PROXY_PORT_TRANSACTION": "64300",
-			"STUDIO_PORT":                   "54323",
-			"PG_META_PORT":                  "54381", // MetaPort = ImgProxy base
-			"IMGPROXY_BIND":                 ":54382",
 		},
 	}
 
@@ -139,9 +127,9 @@ func TestAllocatePorts_FlatUsedSet_PreventsCollision(t *testing.T) {
 	portSet, err := allocator.AllocatePorts(context.Background())
 	require.NoError(t, err)
 
-	// All allocated ports must be unique.
+	// All allocated ports (including derived KongHTTPS) must be unique.
 	seen := make(map[int]bool)
-	for _, p := range []int{portSet.KongHTTP, portSet.KongHTTP + 1, portSet.PostgresPort, portSet.PoolerPort, portSet.StudioPort, portSet.MetaPort, portSet.ImgProxyPort} {
+	for _, p := range []int{portSet.KongHTTP, portSet.KongHTTP + 1, portSet.PostgresPort, portSet.PoolerPort} {
 		assert.False(t, seen[p], "port %d is duplicated in allocated PortSet", p)
 		seen[p] = true
 	}

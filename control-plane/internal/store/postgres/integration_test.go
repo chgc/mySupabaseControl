@@ -230,7 +230,6 @@ func TestIntegration_ConfigRepository_SaveAndGetConfig(t *testing.T) {
 
 	portSet := &domain.PortSet{
 		KongHTTP: 8000, PostgresPort: 5432, PoolerPort: 6543,
-		StudioPort: 3000, MetaPort: 8080, ImgProxyPort: 5001,
 	}
 	cfg, err := domain.ResolveConfig(p, allSecrets(), portSet, nil)
 	require.NoError(t, err)

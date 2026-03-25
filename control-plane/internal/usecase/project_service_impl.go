@@ -432,7 +432,7 @@ func (s *projectService) GetCredentials(ctx context.Context, slug string) (*Cred
 	}
 
 	kongPort := get("KONG_HTTP_PORT")
-	studioPort := get("STUDIO_PORT")
+	publicURL := get("SUPABASE_PUBLIC_URL")
 
 	cv := &CredentialsView{
 		Slug:              project.Slug,
@@ -446,11 +446,13 @@ func (s *projectService) GetCredentials(ctx context.Context, slug string) (*Cred
 		PostgresPassword:  get("POSTGRES_PASSWORD"),
 		PoolerPort:        get("POOLER_PROXY_PORT_TRANSACTION"),
 	}
-	if kongPort != "" {
-		cv.APIURL = fmt.Sprintf("http://localhost:%s", kongPort)
-	}
-	if studioPort != "" {
-		cv.StudioURL = fmt.Sprintf("http://localhost:%s", studioPort)
+	if publicURL != "" {
+		cv.APIURL = publicURL
+		cv.StudioURL = publicURL
+	} else if kongPort != "" {
+		base := fmt.Sprintf("http://localhost:%s", kongPort)
+		cv.APIURL = base
+		cv.StudioURL = base
 	}
 	return cv, nil
 }
@@ -497,16 +499,21 @@ func toProjectView(p *domain.ProjectModel, config *domain.ProjectConfig, health 
 }
 
 // buildURLs constructs ProjectURLs from config values.
+// Studio is served through Kong (/* → http://studio:3000), so both API and
+// Studio URLs resolve to the same Kong endpoint.
 func buildURLs(config *domain.ProjectConfig) *ProjectURLs {
+	publicURL, _ := config.Get("SUPABASE_PUBLIC_URL")
 	kongPort, _ := config.Get("KONG_HTTP_PORT")
-	studioPort, _ := config.Get("STUDIO_PORT")
 
 	urls := &ProjectURLs{}
-	if kongPort != "" {
-		urls.API = fmt.Sprintf("http://localhost:%s", kongPort)
-	}
-	if studioPort != "" {
-		urls.Studio = fmt.Sprintf("http://localhost:%s", studioPort)
+	if publicURL != "" {
+		urls.API = publicURL
+		urls.Studio = publicURL
+	} else if kongPort != "" {
+		// Fallback for configs created before SUPABASE_PUBLIC_URL was stored.
+		base := fmt.Sprintf("http://localhost:%s", kongPort)
+		urls.API = base
+		urls.Studio = base
 	}
 	return urls
 }

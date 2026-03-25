@@ -12,8 +12,8 @@ import (
 func TestConfigSchema_Completeness(t *testing.T) {
 	schema := domain.ConfigSchema()
 
-	t.Run("total count is 94", func(t *testing.T) {
-		assert.Len(t, schema, 94)
+	t.Run("total count is 93", func(t *testing.T) {
+		assert.Len(t, schema, 93)
 	})
 
 	t.Run("no duplicate keys", func(t *testing.T) {
@@ -30,8 +30,10 @@ func TestConfigSchema_Completeness(t *testing.T) {
 		for _, e := range schema {
 			counts[e.Category]++
 		}
-		assert.Equal(t, 36, counts[domain.CategoryStaticDefault], "StaticDefault count")
-		assert.Equal(t, 16, counts[domain.CategoryPerProject], "PerProject count")
+		// STUDIO_PORT removed (Studio served via Kong). PG_META_PORT and IMGPROXY_BIND
+		// moved to StaticDefault (internal Docker-network ports, not host-exposed).
+		assert.Equal(t, 38, counts[domain.CategoryStaticDefault], "StaticDefault count")
+		assert.Equal(t, 13, counts[domain.CategoryPerProject], "PerProject count")
 		assert.Equal(t, 12, counts[domain.CategoryGeneratedSecret], "GeneratedSecret count")
 		assert.Equal(t, 30, counts[domain.CategoryUserOverridable], "UserOverridable count")
 	})
@@ -98,7 +100,6 @@ func TestConfigSchema_Completeness(t *testing.T) {
 			"KONG_HTTP_PORT",
 			"KONG_HTTPS_PORT",
 			"POSTGRES_PORT",
-			"STUDIO_PORT",
 		}
 		keyIndex := make(map[string]domain.ConfigEntry, len(schema))
 		for _, e := range schema {

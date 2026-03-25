@@ -44,14 +44,13 @@ type ConfigEntry struct {
 	Required bool
 }
 
-// PortSet holds the full set of ports allocated for a single project.
+// PortSet holds the full set of externally-exposed ports allocated for a single project.
+// Internal container ports (PG_META_PORT, IMGPROXY_BIND) are excluded because each
+// project runs in its own isolated Docker network and those ports need not be unique.
 // KONG_HTTPS_PORT is deliberately absent — it is a derived value (KongHTTP + 1)
 // computed by computePerProjectVars and never independently allocated.
 type PortSet struct {
 	KongHTTP     int // External API port (starting from 28081).
 	PostgresPort int // PostgreSQL port (starting from 54320).
 	PoolerPort   int // Supavisor transaction port (starting from 64300).
-	StudioPort   int // Studio UI port (starting from 54323).
-	MetaPort     int // pg-meta API port (starting from 54380).
-	ImgProxyPort int // imgproxy listen port (starting from 54381).
 }

@@ -522,8 +522,8 @@ func TestToProjectView_BuildsURLs(t *testing.T) {
 	config := &domain.ProjectConfig{
 		ProjectSlug: "test-proj",
 		Values: map[string]string{
-			"KONG_HTTP_PORT": "28081",
-			"STUDIO_PORT":    "54323",
+			"KONG_HTTP_PORT":      "28081",
+			"SUPABASE_PUBLIC_URL": "http://localhost:28081",
 		},
 		Overrides: map[string]string{},
 	}
@@ -531,7 +531,7 @@ func TestToProjectView_BuildsURLs(t *testing.T) {
 	view := toProjectView(p, config, nil)
 	require.NotNil(t, view.URLs)
 	assert.Equal(t, "http://localhost:28081", view.URLs.API)
-	assert.Equal(t, "http://localhost:54323", view.URLs.Studio)
+	assert.Equal(t, "http://localhost:28081", view.URLs.Studio)
 }
 
 func TestToProjectView_NilConfig_NoURLs(t *testing.T) {

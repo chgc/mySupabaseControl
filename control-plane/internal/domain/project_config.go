@@ -1,9 +1,7 @@
 package domain
 
 import (
-	"fmt"
 	"strconv"
-	"strings"
 )
 
 // ProjectConfig holds the fully-resolved configuration for a single project.
@@ -133,25 +131,24 @@ func ResolveConfig(
 // ProjectModel and allocated PortSet.
 // KONG_HTTPS_PORT is a derived value (KongHTTP + 1) computed here; it is not
 // stored in PortSet and not read from it.
+// Internal ports (PG_META_PORT, IMGPROXY_BIND) are handled as StaticDefault
+// and are therefore absent from PortSet.
 func computePerProjectVars(project *ProjectModel, ports *PortSet) map[string]string {
 	kongHTTP := strconv.Itoa(ports.KongHTTP)
 	return map[string]string{
-		"KONG_HTTP_PORT":               kongHTTP,
-		"KONG_HTTPS_PORT":              strconv.Itoa(ports.KongHTTP + 1),
-		"POSTGRES_PORT":                strconv.Itoa(ports.PostgresPort),
+		"KONG_HTTP_PORT":                kongHTTP,
+		"KONG_HTTPS_PORT":               strconv.Itoa(ports.KongHTTP + 1),
+		"POSTGRES_PORT":                 strconv.Itoa(ports.PostgresPort),
 		"POOLER_PROXY_PORT_TRANSACTION": strconv.Itoa(ports.PoolerPort),
-		"API_EXTERNAL_URL":             "http://localhost:" + kongHTTP,
-		"SUPABASE_PUBLIC_URL":          "http://localhost:" + kongHTTP,
-		"SITE_URL":                     "http://localhost:3000",
-		"PROJECT_DATA_DIR":             "./volumes",
-		"STUDIO_DEFAULT_ORGANIZATION":  "Default Organization",
-		"STUDIO_DEFAULT_PROJECT":       project.DisplayName,
-		"STORAGE_TENANT_ID":            "stub",
-		"POOLER_TENANT_ID":             project.Slug,
-		"DOCKER_SOCKET_LOCATION":       "/var/run/docker.sock",
-		"STUDIO_PORT":                  strconv.Itoa(ports.StudioPort),
-		"PG_META_PORT":                 strconv.Itoa(ports.MetaPort),
-		"IMGPROXY_BIND":                fmt.Sprintf(":%d", ports.ImgProxyPort),
+		"API_EXTERNAL_URL":              "http://localhost:" + kongHTTP,
+		"SUPABASE_PUBLIC_URL":           "http://localhost:" + kongHTTP,
+		"SITE_URL":                      "http://localhost:3000",
+		"PROJECT_DATA_DIR":              "./volumes",
+		"STUDIO_DEFAULT_ORGANIZATION":   "Default Organization",
+		"STUDIO_DEFAULT_PROJECT":        project.DisplayName,
+		"STORAGE_TENANT_ID":             "stub",
+		"POOLER_TENANT_ID":              project.Slug,
+		"DOCKER_SOCKET_LOCATION":        "/var/run/docker.sock",
 	}
 }
 
@@ -197,33 +194,11 @@ func ExtractPortSet(config *ProjectConfig) (*PortSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	studioPort, err := parseInt("STUDIO_PORT")
-	if err != nil {
-		return nil, err
-	}
-	metaPort, err := parseInt("PG_META_PORT")
-	if err != nil {
-		return nil, err
-	}
-
-	// IMGPROXY_BIND is stored as ":{port}" — strip the leading colon.
-	imgproxyRaw, ok := config.Values["IMGPROXY_BIND"]
-	if !ok || imgproxyRaw == "" {
-		return nil, &ErrInvalidPortSet{Key: "IMGPROXY_BIND"}
-	}
-	imgproxyStr := strings.TrimPrefix(imgproxyRaw, ":")
-	imgProxyPort, err := strconv.Atoi(imgproxyStr)
-	if err != nil {
-		return nil, &ErrInvalidPortSet{Key: "IMGPROXY_BIND", Value: imgproxyRaw}
-	}
 
 	return &PortSet{
 		KongHTTP:     kongHTTP,
 		PostgresPort: postgresPort,
 		PoolerPort:   poolerPort,
-		StudioPort:   studioPort,
-		MetaPort:     metaPort,
-		ImgProxyPort: imgProxyPort,
 	}, nil
 }
 

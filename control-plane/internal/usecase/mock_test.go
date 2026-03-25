@@ -120,9 +120,6 @@ func (m *mockPortAllocator) AllocatePorts(ctx context.Context) (*domain.PortSet,
 		KongHTTP:     28081,
 		PostgresPort: 54320,
 		PoolerPort:   64300,
-		StudioPort:   54323,
-		MetaPort:     54380,
-		ImgProxyPort: 54381,
 	}, nil
 }
 

@@ -35,9 +35,6 @@ func testPortSet() *domain.PortSet {
 		KongHTTP:     8000,
 		PostgresPort: 5432,
 		PoolerPort:   6543,
-		StudioPort:   3000,
-		MetaPort:     8080,
-		ImgProxyPort: 5001,
 	}
 }
 
@@ -170,27 +167,24 @@ func TestExtractPortSet_RoundTrip(t *testing.T) {
 	assert.Equal(t, original.KongHTTP, extracted.KongHTTP)
 	assert.Equal(t, original.PostgresPort, extracted.PostgresPort)
 	assert.Equal(t, original.PoolerPort, extracted.PoolerPort)
-	assert.Equal(t, original.StudioPort, extracted.StudioPort)
-	assert.Equal(t, original.MetaPort, extracted.MetaPort)
-	assert.Equal(t, original.ImgProxyPort, extracted.ImgProxyPort)
 }
 
-func TestExtractPortSet_ImgProxyBind_ColonFormat(t *testing.T) {
-	// IMGPROXY_BIND is stored as ":{port}" — ExtractPortSet must strip the colon.
+func TestExtractPortSet_StaticPortsNotRequired(t *testing.T) {
+	// PG_META_PORT and IMGPROXY_BIND are now StaticDefault, not PerProject.
+	// ExtractPortSet only requires the 3 externally-exposed port keys.
 	cfg := &domain.ProjectConfig{
 		ProjectSlug: "test",
 		Values: map[string]string{
-			"KONG_HTTP_PORT":             "8000",
-			"POSTGRES_PORT":              "5432",
+			"KONG_HTTP_PORT":                "8000",
+			"POSTGRES_PORT":                 "5432",
 			"POOLER_PROXY_PORT_TRANSACTION": "6543",
-			"STUDIO_PORT":                "3000",
-			"PG_META_PORT":               "8080",
-			"IMGPROXY_BIND":              ":5001",
 		},
 	}
 	ps, err := domain.ExtractPortSet(cfg)
 	require.NoError(t, err)
-	assert.Equal(t, 5001, ps.ImgProxyPort)
+	assert.Equal(t, 8000, ps.KongHTTP)
+	assert.Equal(t, 5432, ps.PostgresPort)
+	assert.Equal(t, 6543, ps.PoolerPort)
 }
 
 func TestExtractPortSet_MissingKey_ReturnsError(t *testing.T) {
@@ -198,11 +192,8 @@ func TestExtractPortSet_MissingKey_ReturnsError(t *testing.T) {
 		ProjectSlug: "test",
 		Values: map[string]string{
 			// KONG_HTTP_PORT missing intentionally
-			"POSTGRES_PORT":              "5432",
+			"POSTGRES_PORT":                 "5432",
 			"POOLER_PROXY_PORT_TRANSACTION": "6543",
-			"STUDIO_PORT":                "3000",
-			"PG_META_PORT":               "8080",
-			"IMGPROXY_BIND":              ":5001",
 		},
 	}
 	_, err := domain.ExtractPortSet(cfg)
@@ -217,12 +208,9 @@ func TestExtractPortSet_InvalidValue_ReturnsError(t *testing.T) {
 	cfg := &domain.ProjectConfig{
 		ProjectSlug: "test",
 		Values: map[string]string{
-			"KONG_HTTP_PORT":             "not-a-number",
-			"POSTGRES_PORT":              "5432",
+			"KONG_HTTP_PORT":                "not-a-number",
+			"POSTGRES_PORT":                 "5432",
 			"POOLER_PROXY_PORT_TRANSACTION": "6543",
-			"STUDIO_PORT":                "3000",
-			"PG_META_PORT":               "8080",
-			"IMGPROXY_BIND":              ":5001",
 		},
 	}
 	_, err := domain.ExtractPortSet(cfg)

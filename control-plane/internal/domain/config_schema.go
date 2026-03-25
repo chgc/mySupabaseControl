@@ -157,7 +157,7 @@ func ConfigSchema() []ConfigEntry {
 			Description:  "Allow X-Forwarded-Path header in Storage",
 			Services:     []ServiceName{ServiceStorage}},
 
-		// ── PerProject (16) ───────────────────────────────────────────────
+		// ── PerProject (13) ───────────────────────────────────────────────
 		{Key: "KONG_HTTP_PORT", Category: CategoryPerProject, Scope: ScopeProject,
 			Description: "External API port (allocated starting from 28081)",
 			Services:    []ServiceName{ServiceKong},
@@ -210,18 +210,17 @@ func ConfigSchema() []ConfigEntry {
 			DefaultValue: "/var/run/docker.sock",
 			Description:  "Docker socket path for Vector (TODO: Phase 2 — evaluate UserOverridable)",
 			Services:     []ServiceName{ServiceVector}},
-		{Key: "STUDIO_PORT", Category: CategoryPerProject, Scope: ScopeProject,
-			Description: "Studio UI port (allocated starting from 54323)",
-			Services:    []ServiceName{ServiceStudio},
-			Required:    true},
-		{Key: "PG_META_PORT", Category: CategoryPerProject, Scope: ScopeProject,
-			Description: "pg-meta API port (allocated starting from 54380)",
-			Services:    []ServiceName{ServiceMeta},
-			Required:    true},
-		{Key: "IMGPROXY_BIND", Category: CategoryPerProject, Scope: ScopeProject,
-			Description: "imgproxy listen address: :{port} (allocated starting from 54381)",
-			Services:    []ServiceName{ServiceImgProxy},
-			Required:    true},
+		// PG_META_PORT and IMGPROXY_BIND are StaticDefault because they are internal
+		// container ports that do not need to be unique across projects — each project
+		// runs in its own isolated Docker network.
+		{Key: "PG_META_PORT", Category: CategoryStaticDefault, Scope: ScopeProject,
+			DefaultValue: "8080",
+			Description:  "pg-meta internal listen port (static; each project has its own Docker network)",
+			Services:     []ServiceName{ServiceMeta, ServiceStudio}},
+		{Key: "IMGPROXY_BIND", Category: CategoryStaticDefault, Scope: ScopeProject,
+			DefaultValue: ":5001",
+			Description:  "imgproxy internal bind address (static; each project has its own Docker network)",
+			Services:     []ServiceName{ServiceImgProxy}},
 
 		// ── GeneratedSecret (12) ─────────────────────────────────────────
 		{Key: "JWT_SECRET", Category: CategoryGeneratedSecret, Scope: ScopeProject,
