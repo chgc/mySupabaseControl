@@ -1,5 +1,6 @@
 .env
 volumes/
+projects/
 projects/*/.env
 projects/*/volumes/sbctl
 control-plane/sbctl
