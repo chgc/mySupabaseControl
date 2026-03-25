@@ -5,11 +5,18 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
 // version is injected at build time via -ldflags "-X main.version=x.y.z".
 var version = "dev"
+
+// dotEnvFile is the file that sbctl auto-loads on startup.
+// It is searched relative to the current working directory.
+// Shell environment variables always take precedence (godotenv.Load does not
+// override vars that are already set).
+const dotEnvFile = ".sbctl.env"
 
 // ExitError bundles an exit code with the underlying error.
 // RunE writes the human-readable message to stderr before returning ExitError.
@@ -23,6 +30,14 @@ func (e *ExitError) Error() string { return e.Err.Error() }
 func (e *ExitError) Unwrap() error { return e.Err }
 
 func main() {
+	// Auto-load .sbctl.env from the current working directory.
+	// Shell environment variables always win — godotenv.Load only sets vars
+	// that are not already present in the environment.
+	// Silently ignore "file not found"; all other errors are warnings.
+	if err := godotenv.Load(dotEnvFile); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Warning: could not load %s: %v\n", dotEnvFile, err)
+	}
+
 	root := buildRootCmd()
 	if err := root.Execute(); err != nil {
 		var exitErr *ExitError

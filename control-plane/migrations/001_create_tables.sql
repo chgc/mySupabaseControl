@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS projects (
     )
 );
 
-CREATE TRIGGER set_updated_at
+CREATE OR REPLACE TRIGGER set_updated_at
     BEFORE UPDATE ON projects
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS project_configs (
     )
 );
 
-CREATE TRIGGER set_config_updated_at
+CREATE OR REPLACE TRIGGER set_config_updated_at
     BEFORE UPDATE ON project_configs
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS project_overrides (
     PRIMARY KEY (project_slug, key)
 );
 
-CREATE TRIGGER set_override_updated_at
+CREATE OR REPLACE TRIGGER set_override_updated_at
     BEFORE UPDATE ON project_overrides
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
@@ -116,11 +116,20 @@ ALTER TABLE projects         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_configs  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_overrides ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "service_role_full_access" ON projects
-    FOR ALL USING (true) WITH CHECK (true);
-
-CREATE POLICY "service_role_full_access" ON project_configs
-    FOR ALL USING (true) WITH CHECK (true);
-
-CREATE POLICY "service_role_full_access" ON project_overrides
-    FOR ALL USING (true) WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'projects' AND policyname = 'service_role_full_access'
+  ) THEN
+    CREATE POLICY "service_role_full_access" ON projects FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'project_configs' AND policyname = 'service_role_full_access'
+  ) THEN
+    CREATE POLICY "service_role_full_access" ON project_configs FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'project_overrides' AND policyname = 'service_role_full_access'
+  ) THEN
+    CREATE POLICY "service_role_full_access" ON project_overrides FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
