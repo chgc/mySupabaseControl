@@ -109,3 +109,70 @@ Invoke-WebRequest http://localhost:28081/auth/v1/health -Headers @{ apikey = '<A
 - This setup is for local development, not production hardening.
 - Fixed `container_name` entries were removed so multiple projects can run without name collisions.
 - Writable bind mounts are now project-scoped via `PROJECT_DATA_DIR`.
+
+---
+
+## sbctl — Control Plane CLI
+
+`sbctl` 是 Control Plane 的命令列工具，可程式化地管理 Supabase 專案的完整生命週期，並支援 MCP Server 模式供 AI agent 使用。
+
+### 前置需求
+
+- Docker（已安裝且 daemon 在執行中）
+- Go 1.22+（用來建置 binary）
+
+### 一鍵安裝
+
+```bash
+just cp-setup
+```
+
+這個指令會自動：
+1. 啟動 Control Plane 專用 PostgreSQL container（port 5433）
+2. 套用 DB migration（建立 `projects` / `project_configs` / `project_overrides` 表）
+3. 建置 `./sbctl` binary
+
+完成後依照輸出設定環境變數：
+
+```bash
+export SBCTL_DB_URL="postgresql://postgres:sbctl_secret@localhost:5433/sbctl"
+export SBCTL_PROJECTS_DIR="./projects"
+```
+
+### 使用方式
+
+```bash
+# 列出所有專案
+./sbctl project list
+
+# 建立並啟動新專案（需 Docker）
+./sbctl project create my-project --display-name "My Project"
+
+# 查看專案狀態
+./sbctl project get my-project
+
+# 停止 / 啟動 / 重置 / 刪除
+./sbctl project stop my-project
+./sbctl project start my-project
+./sbctl project reset my-project
+./sbctl project delete my-project
+
+# JSON 輸出
+./sbctl -o json project list
+
+# 啟動 MCP Server（供 AI agent 使用，stdio transport）
+./sbctl mcp serve
+```
+
+### 進階安裝選項
+
+```bash
+# 自訂 DB port 與密碼
+just cp-setup --db-port 5434 --db-password mypassword
+
+# 只重建 binary（不重建 DB）
+just cp-setup --no-build
+
+# 重置 DB（清除所有資料並重建）
+just cp-setup --reset-db
+```

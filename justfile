@@ -37,6 +37,10 @@ ps project:
 
 # ── Control Plane ─────────────────────────────────────────────────────────────
 
+# One-shot setup: start Control Plane DB, run migration, build sbctl binary.
+cp-setup *args:
+  bash ./scripts/setup-control-plane.sh {{args}}
+
 # Build the control plane server.
 cp-build:
   cd control-plane && go build ./...

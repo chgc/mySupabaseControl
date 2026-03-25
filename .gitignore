@@ -3,3 +3,4 @@ volumes/
 projects/*/.env
 projects/*/volumes/sbctl
 control-plane/sbctl
+/sbctl
