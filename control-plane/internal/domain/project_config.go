@@ -143,7 +143,7 @@ func computePerProjectVars(project *ProjectModel, ports *PortSet) map[string]str
 		"API_EXTERNAL_URL":             "http://localhost:" + kongHTTP,
 		"SUPABASE_PUBLIC_URL":          "http://localhost:" + kongHTTP,
 		"SITE_URL":                     "http://localhost:3000",
-		"PROJECT_DATA_DIR":             "./projects/" + project.Slug + "/volumes",
+		"PROJECT_DATA_DIR":             "./volumes",
 		"STUDIO_DEFAULT_ORGANIZATION":  "Default Organization",
 		"STUDIO_DEFAULT_PROJECT":       project.DisplayName,
 		"STORAGE_TENANT_ID":            "stub",
