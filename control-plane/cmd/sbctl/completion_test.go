@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/kevin/supabase-control-plane/internal/usecase"
 )
 
 func TestCompletionBash(t *testing.T) {
@@ -111,6 +115,122 @@ func TestPersistentPreRunE_SkipsForShellCompRequest(t *testing.T) {
 	}
 	if !ran {
 		t.Error("expected __complete command to have run")
+	}
+}
+
+func TestProjectSlugCompletion_ReturnsSlugs(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{
+		ListFn: func(_ context.Context) ([]*usecase.ProjectView, error) {
+			return []*usecase.ProjectView{
+				{Slug: "alpha", DisplayName: "Alpha Project"},
+				{Slug: "beta", DisplayName: "Beta Project"},
+			}, nil
+		},
+	}}
+	fn := projectSlugCompletion(&deps)
+
+	completions, directive := fn(&cobra.Command{}, nil, "")
+	if directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("expected ShellCompDirectiveNoFileComp, got %v", directive)
+	}
+	if len(completions) != 2 {
+		t.Fatalf("expected 2 completions, got %d: %v", len(completions), completions)
+	}
+	for _, want := range []string{"alpha\tAlpha Project", "beta\tBeta Project"} {
+		found := false
+		for _, c := range completions {
+			if c == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected completion %q, got %v", want, completions)
+		}
+	}
+}
+
+func TestProjectSlugCompletion_FiltersByPrefix(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{
+		ListFn: func(_ context.Context) ([]*usecase.ProjectView, error) {
+			return []*usecase.ProjectView{
+				{Slug: "alpha", DisplayName: "Alpha"},
+				{Slug: "beta", DisplayName: "Beta"},
+				{Slug: "alpha-two", DisplayName: "Alpha Two"},
+			}, nil
+		},
+	}}
+	fn := projectSlugCompletion(&deps)
+
+	completions, _ := fn(&cobra.Command{}, nil, "al")
+	if len(completions) != 2 {
+		t.Fatalf("expected 2 completions for prefix 'al', got %d: %v", len(completions), completions)
+	}
+	for _, c := range completions {
+		if !strings.HasPrefix(c, "alpha") {
+			t.Errorf("unexpected completion %q for prefix 'al'", c)
+		}
+	}
+}
+
+func TestProjectSlugCompletion_NilDeps_NoPanic(t *testing.T) {
+	// When deps is nil (completion context, PersistentPreRunE skipped),
+	// should return empty list without panicking.
+	var deps *Deps
+	fn := projectSlugCompletion(&deps)
+
+	completions, directive := fn(&cobra.Command{}, nil, "")
+	if directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("expected ShellCompDirectiveNoFileComp, got %v", directive)
+	}
+	if completions != nil {
+		t.Errorf("expected nil completions with nil deps, got %v", completions)
+	}
+}
+
+func TestProjectSlugCompletion_ListError_ReturnsEmpty(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{
+		ListFn: func(_ context.Context) ([]*usecase.ProjectView, error) {
+			return nil, fmt.Errorf("db down")
+		},
+	}}
+	fn := projectSlugCompletion(&deps)
+
+	completions, directive := fn(&cobra.Command{}, nil, "")
+	if directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("expected ShellCompDirectiveNoFileComp, got %v", directive)
+	}
+	if completions != nil {
+		t.Errorf("expected nil completions on error, got %v", completions)
+	}
+}
+
+func TestOutputFlagCompletion(t *testing.T) {
+	root := buildRootCmd()
+	// Use cobra's __complete mechanism to test flag completion.
+	// "sbctl --output <TAB>" translates to "__complete --output ''"
+	out, _, err := runCmd(t, root, []string{cobra.ShellCompRequestCmd, "--output", ""}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"table", "json", "yaml"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output flag completion, got: %q", want, out)
+		}
+	}
+}
+
+func TestRuntimeFlagCompletion(t *testing.T) {
+	root := buildRootCmd()
+	// "sbctl project create --runtime <TAB>"
+	out, _, err := runCmd(t, root, []string{cobra.ShellCompRequestCmd, "project", "create", "--runtime", ""}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"docker-compose", "kubernetes"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in runtime flag completion, got: %q", want, out)
+		}
 	}
 }
 

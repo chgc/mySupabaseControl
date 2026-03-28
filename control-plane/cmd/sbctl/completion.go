@@ -1,8 +1,34 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/cobra"
 )
+
+// projectSlugCompletion returns a Cobra ValidArgsFunction that completes
+// project slugs. When deps is nil (completion context where PersistentPreRunE
+// is skipped), it returns an empty list gracefully.
+func projectSlugCompletion(deps **Deps) func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		directive := cobra.ShellCompDirectiveNoFileComp
+		if deps == nil || *deps == nil {
+			return nil, directive
+		}
+		views, err := (*deps).ProjectService.List(cmd.Context())
+		if err != nil {
+			return nil, directive
+		}
+		var completions []string
+		for _, v := range views {
+			if toComplete == "" || strings.HasPrefix(v.Slug, toComplete) {
+				completions = append(completions, fmt.Sprintf("%s\t%s", v.Slug, v.DisplayName))
+			}
+		}
+		return completions, directive
+	}
+}
 
 func buildCompletionCmd() *cobra.Command {
 	cmd := &cobra.Command{
