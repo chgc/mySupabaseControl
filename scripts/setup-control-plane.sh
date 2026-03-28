@@ -152,20 +152,24 @@ wait_for_postgres "${DB_URL}"
 log "步驟 3/4：套用 Migration"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MIGRATION_FILE="${SCRIPT_DIR}/../control-plane/migrations/001_create_tables.sql"
+MIGRATION_DIR="${SCRIPT_DIR}/../control-plane/migrations"
 
-if [[ ! -f "$MIGRATION_FILE" ]]; then
-  die "Migration 檔案不存在：${MIGRATION_FILE}"
+if [[ ! -d "$MIGRATION_DIR" ]]; then
+  die "Migration 目錄不存在：${MIGRATION_DIR}"
 fi
 
-# 直接透過 docker exec 執行 psql（不需要本機安裝 psql）
-docker exec -i "${CONTAINER_NAME}" \
-  psql -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 \
-  < "${MIGRATION_FILE}" \
-  && success "Migration 套用成功" \
-  || {
-    warn "Migration 可能已套用（IF NOT EXISTS 的表是正常的），繼續..."
-  }
+# 依序套用所有 migration 檔案（按字母順序）
+for MIGRATION_FILE in "${MIGRATION_DIR}"/*.sql; do
+  [[ -f "$MIGRATION_FILE" ]] || continue
+  MIGRATION_NAME="$(basename "$MIGRATION_FILE")"
+  docker exec -i "${CONTAINER_NAME}" \
+    psql -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 \
+    < "${MIGRATION_FILE}" \
+    && success "Migration 套用成功：${MIGRATION_NAME}" \
+    || {
+      warn "Migration ${MIGRATION_NAME} 可能已套用（IF NOT EXISTS / ADD COLUMN IF NOT EXISTS 是正常的），繼續..."
+    }
+done
 
 # ── 步驟 4：建置 sbctl Binary ─────────────────────────────────────────────────
 
