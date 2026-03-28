@@ -37,12 +37,17 @@ func buildProjectCmd(deps **Deps, output *string) *cobra.Command {
 
 func buildCreateCmd(deps **Deps, output *string) *cobra.Command {
 	var displayName string
+	var runtimeFlag string
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create and start a new Supabase project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			view, err := (*deps).ProjectService.Create(cmd.Context(), args[0], displayName, domain.RuntimeDockerCompose)
+			rt := domain.RuntimeType(runtimeFlag)
+			if err := domain.ValidateRuntimeType(rt); err != nil {
+				return projectErr(cmd, &usecase.UsecaseError{Code: usecase.ErrCodeInvalidInput, Message: err.Error(), Err: err})
+			}
+			view, err := (*deps).ProjectService.Create(cmd.Context(), args[0], displayName, rt)
 			if err != nil {
 				return projectErr(cmd, err)
 			}
@@ -51,6 +56,8 @@ func buildCreateCmd(deps **Deps, output *string) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&displayName, "display-name", "n", "", "Human-readable project name (required)")
 	_ = cmd.MarkFlagRequired("display-name")
+	cmd.Flags().StringVarP(&runtimeFlag, "runtime", "r", string(domain.RuntimeDockerCompose),
+		"Runtime type: docker-compose or kubernetes")
 	return cmd
 }
 

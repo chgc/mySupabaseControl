@@ -112,6 +112,9 @@ func buildMCPServer(deps *Deps) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Human-readable project name"),
 			),
+			mcp.WithString("runtime",
+				mcp.Description("Runtime type: docker-compose (default) or kubernetes"),
+			),
 		),
 		makeMCPCreateProject(deps),
 	)
@@ -202,7 +205,15 @@ func makeMCPCreateProject(deps *Deps) server.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError("display_name is required"), nil
 		}
-		view, err := deps.ProjectService.Create(ctx, slug, displayName, domain.RuntimeDockerCompose)
+		rtStr, _ := req.RequireString("runtime")
+		if rtStr == "" {
+			rtStr = string(domain.RuntimeDockerCompose)
+		}
+		rt := domain.RuntimeType(rtStr)
+		if err := domain.ValidateRuntimeType(rt); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		view, err := deps.ProjectService.Create(ctx, slug, displayName, rt)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
