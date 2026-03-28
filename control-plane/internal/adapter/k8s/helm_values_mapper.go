@@ -82,13 +82,7 @@ func (m *HelmValuesMapper) MapValues(config *domain.ProjectConfig) (map[string]a
 		setNestedValue(result, mapping.ValuesPath, finalValue)
 	}
 
-	// Copy port values to nodePort (ports already validated by toInt Transform above).
-	if v := getNestedInt(result, "service.kong.port"); v != 0 {
-		setNestedValue(result, "service.kong.nodePort", v)
-	}
-	if v := getNestedInt(result, "service.db.port"); v != 0 {
-		setNestedValue(result, "service.db.nodePort", v)
-	}
+
 
 	return result, nil
 }
@@ -102,8 +96,12 @@ var chartServices = []string{
 // injectStaticValues sets K8s adapter fixed settings into the values map.
 func injectStaticValues(m map[string]any) {
 	// Kong & DB use NodePort for external access.
+	// port = in-cluster service port (what pods use via DNS).
+	// nodePort = external port on the host (set per-project from config).
 	setNestedValue(m, "service.kong.type", "NodePort")
+	setNestedValue(m, "service.kong.port", 8000) // Kong container listens on 8000
 	setNestedValue(m, "service.db.type", "NodePort")
+	setNestedValue(m, "service.db.port", 5432) // PostgreSQL standard port
 
 	// Disable minio (use file backend).
 	setNestedValue(m, "deployment.minio.enabled", false)
@@ -195,9 +193,9 @@ func defaultMappings() []HelmMapping {
 		{ConfigKey: "S3_PROTOCOL_ACCESS_KEY_SECRET", ValuesPath: "secret.s3.accessKey"},
 
 		// === PerProject (13 keys: 8 mapped, 5 skipped) ===
-		{ConfigKey: "KONG_HTTP_PORT", ValuesPath: "service.kong.port", Transform: toInt},
+		{ConfigKey: "KONG_HTTP_PORT", ValuesPath: "service.kong.nodePort", Transform: toInt},
 		{ConfigKey: "KONG_HTTPS_PORT", ValuesPath: ""}, // K8s doesn't need HTTPS port
-		{ConfigKey: "POSTGRES_PORT", ValuesPath: "service.db.port", Transform: toInt},
+		{ConfigKey: "POSTGRES_PORT", ValuesPath: "service.db.nodePort", Transform: toInt},
 		{ConfigKey: "POOLER_PROXY_PORT_TRANSACTION", ValuesPath: ""}, // chart has no supavisor
 		{ConfigKey: "API_EXTERNAL_URL", ValuesPath: "environment.auth.API_EXTERNAL_URL"},
 		{ConfigKey: "SUPABASE_PUBLIC_URL", ValuesPath: "environment.studio.SUPABASE_PUBLIC_URL"},

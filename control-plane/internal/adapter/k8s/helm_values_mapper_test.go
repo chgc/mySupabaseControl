@@ -270,14 +270,14 @@ func TestMapValues_PerProjectKeys(t *testing.T) {
 	}
 
 	// Mapped keys.
-	if got := getNestedValue(result, "service.kong.port"); got != 30080 {
-		t.Errorf("service.kong.port: got %v, want 30080", got)
+	if got := getNestedValue(result, "service.kong.port"); got != 8000 {
+		t.Errorf("service.kong.port: got %v, want 8000", got)
 	}
 	if got := getNestedValue(result, "service.kong.nodePort"); got != 30080 {
 		t.Errorf("service.kong.nodePort: got %v, want 30080", got)
 	}
-	if got := getNestedValue(result, "service.db.port"); got != 30432 {
-		t.Errorf("service.db.port: got %v, want 30432", got)
+	if got := getNestedValue(result, "service.db.port"); got != 5432 {
+		t.Errorf("service.db.port: got %v, want 5432", got)
 	}
 	if got := getNestedValue(result, "service.db.nodePort"); got != 30432 {
 		t.Errorf("service.db.nodePort: got %v, want 30432", got)
@@ -307,12 +307,18 @@ func TestMapValues_StaticValues(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Service types.
+	// Service types and fixed internal ports.
 	if got := getNestedValue(result, "service.kong.type"); got != "NodePort" {
 		t.Errorf("service.kong.type: got %v, want NodePort", got)
 	}
+	if got := getNestedValue(result, "service.kong.port"); got != 8000 {
+		t.Errorf("service.kong.port: got %v, want 8000", got)
+	}
 	if got := getNestedValue(result, "service.db.type"); got != "NodePort" {
 		t.Errorf("service.db.type: got %v, want NodePort", got)
+	}
+	if got := getNestedValue(result, "service.db.port"); got != 5432 {
+		t.Errorf("service.db.port: got %v, want 5432", got)
 	}
 
 	// Minio disabled.
