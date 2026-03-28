@@ -14,6 +14,7 @@ import (
 type ProjectView struct {
 	Slug           string            `json:"slug"`
 	DisplayName    string            `json:"display_name"`
+	RuntimeType    string            `json:"runtime_type"`
 	Status         string            `json:"status"`
 	PreviousStatus string            `json:"previous_status,omitempty"`
 	LastError      string            `json:"last_error,omitempty"`
@@ -109,8 +110,7 @@ const (
 type Config struct {
 	ProjectRepo     store.ProjectRepository
 	ConfigRepo      store.ConfigRepository
-	Adapter         domain.RuntimeAdapter
-	PortAllocator   domain.PortAllocator
+	Registry        domain.AdapterRegistry
 	SecretGenerator domain.SecretGenerator
 	// Logger is optional; falls back to slog.Default() when nil.
 	Logger *slog.Logger

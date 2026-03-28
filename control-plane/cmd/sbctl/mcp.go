@@ -11,6 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 
+	"github.com/kevin/supabase-control-plane/internal/domain"
 	"github.com/kevin/supabase-control-plane/internal/usecase"
 )
 
@@ -201,7 +202,7 @@ func makeMCPCreateProject(deps *Deps) server.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError("display_name is required"), nil
 		}
-		view, err := deps.ProjectService.Create(ctx, slug, displayName)
+		view, err := deps.ProjectService.Create(ctx, slug, displayName, domain.RuntimeDockerCompose)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

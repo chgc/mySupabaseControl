@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kevin/supabase-control-plane/internal/domain"
 	"github.com/kevin/supabase-control-plane/internal/usecase"
 )
 
@@ -41,7 +42,7 @@ func buildCreateCmd(deps **Deps, output *string) *cobra.Command {
 		Short: "Create and start a new Supabase project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			view, err := (*deps).ProjectService.Create(cmd.Context(), args[0], displayName)
+			view, err := (*deps).ProjectService.Create(cmd.Context(), args[0], displayName, domain.RuntimeDockerCompose)
 			if err != nil {
 				return projectErr(cmd, err)
 			}

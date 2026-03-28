@@ -38,11 +38,20 @@ func BuildDeps(ctx context.Context, dbURL, projectsDir string) (*Deps, error) {
 	allocator := compose.NewComposePortAllocator(projectRepo, configRepo)
 	secretGen := domain.NewSecretGenerator()
 
+	registry, regErr := domain.NewAdapterRegistry(domain.AdapterRegistryConfig{
+		RuntimeType:   domain.RuntimeDockerCompose,
+		Adapter:       adapter,
+		PortAllocator: allocator,
+	})
+	if regErr != nil {
+		pool.Close()
+		return nil, fmt.Errorf("initialise adapter registry: %w", regErr)
+	}
+
 	svc, err := usecase.NewProjectService(usecase.Config{
 		ProjectRepo:     projectRepo,
 		ConfigRepo:      configRepo,
-		Adapter:         adapter,
-		PortAllocator:   allocator,
+		Registry:        registry,
 		SecretGenerator: secretGen,
 	})
 	if err != nil {
