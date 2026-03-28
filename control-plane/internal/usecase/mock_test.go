@@ -106,23 +106,6 @@ func (m *mockConfigRepo) DeleteConfig(ctx context.Context, projectSlug string) e
 	return nil
 }
 
-// --- mockPortAllocator ---
-
-type mockPortAllocator struct {
-	AllocatePortsFn func(ctx context.Context) (*domain.PortSet, error)
-}
-
-func (m *mockPortAllocator) AllocatePorts(ctx context.Context) (*domain.PortSet, error) {
-	if m.AllocatePortsFn != nil {
-		return m.AllocatePortsFn(ctx)
-	}
-	return &domain.PortSet{
-		KongHTTP:     28081,
-		PostgresPort: 54320,
-		PoolerPort:   64300,
-	}, nil
-}
-
 // --- mockSecretGenerator ---
 
 type mockSecretGenerator struct {

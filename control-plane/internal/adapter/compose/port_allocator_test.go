@@ -32,7 +32,7 @@ func TestAllocatePorts_EmptyStore_UsesBasePorts(t *testing.T) {
 
 func TestAllocatePorts_SkipsUsedPorts(t *testing.T) {
 	// Project A occupies base ports.
-	projectA := &domain.ProjectModel{Slug: "alpha"}
+	projectA := &domain.ProjectModel{Slug: "alpha", RuntimeType: domain.RuntimeDockerCompose}
 	configA := &domain.ProjectConfig{
 		ProjectSlug: "alpha",
 		Values: map[string]string{
@@ -100,7 +100,7 @@ func TestAllocatePorts_SkipsOccupiedTCPPorts(t *testing.T) {
 func TestAllocatePorts_FlatUsedSet_PreventsCollision(t *testing.T) {
 	// Project A uses PoolerPort=64300. KongHTTP base would otherwise collide with
 	// KongHTTPS (derived). This test verifies the flat usedSet marks KongHTTPS used.
-	projectA := &domain.ProjectModel{Slug: "beta"}
+	projectA := &domain.ProjectModel{Slug: "beta", RuntimeType: domain.RuntimeDockerCompose}
 	configA := &domain.ProjectConfig{
 		ProjectSlug: "beta",
 		Values: map[string]string{
@@ -138,7 +138,7 @@ func TestAllocatePorts_FlatUsedSet_PreventsCollision(t *testing.T) {
 // ── AllocatePorts: ErrConfigNotFound skips project ───────────────────────────
 
 func TestAllocatePorts_SkipsProjectWithNoConfig(t *testing.T) {
-	project := &domain.ProjectModel{Slug: "noconfig"}
+	project := &domain.ProjectModel{Slug: "noconfig", RuntimeType: domain.RuntimeDockerCompose}
 	allocator := newComposePortAllocatorWithProbe(
 		&mockProjectRepo{
 			ListFn: func(_ context.Context, _ ...store.ListFilter) ([]*domain.ProjectModel, error) {
@@ -180,7 +180,7 @@ func TestAllocatePorts_ListError_ReturnsError(t *testing.T) {
 // ── AllocatePorts: GetConfig error propagates ─────────────────────────────────
 
 func TestAllocatePorts_GetConfigError_ReturnsError(t *testing.T) {
-	project := &domain.ProjectModel{Slug: "broken"}
+	project := &domain.ProjectModel{Slug: "broken", RuntimeType: domain.RuntimeDockerCompose}
 	allocator := newComposePortAllocatorWithProbe(
 		&mockProjectRepo{
 			ListFn: func(_ context.Context, _ ...store.ListFilter) ([]*domain.ProjectModel, error) {
@@ -235,7 +235,7 @@ func TestAllocatePorts_ContextCanceled_ReturnsCtxErr(t *testing.T) {
 // ── AllocatePorts: ExtractPortSet failure skips project ───────────────────────
 
 func TestAllocatePorts_InvalidPortSet_SkipsProject(t *testing.T) {
-	project := &domain.ProjectModel{Slug: "malformed"}
+	project := &domain.ProjectModel{Slug: "malformed", RuntimeType: domain.RuntimeDockerCompose}
 	configMalformed := &domain.ProjectConfig{
 		ProjectSlug: "malformed",
 		Values:      map[string]string{"KONG_HTTP_PORT": "not-a-number"},

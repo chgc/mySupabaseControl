@@ -9,13 +9,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kevin/supabase-control-plane/internal/domain"
 	"github.com/kevin/supabase-control-plane/internal/usecase"
 )
 
 // --- mock ---
 
 type mockSvc struct {
-	CreateFn      func(ctx context.Context, slug, displayName string) (*usecase.ProjectView, error)
+	CreateFn      func(ctx context.Context, slug, displayName string, rt domain.RuntimeType) (*usecase.ProjectView, error)
 	ListFn        func(ctx context.Context) ([]*usecase.ProjectView, error)
 	GetFn         func(ctx context.Context, slug string) (*usecase.ProjectView, error)
 	StartFn       func(ctx context.Context, slug string) (*usecase.ProjectView, error)
@@ -25,9 +26,9 @@ type mockSvc struct {
 	CredentialsFn func(ctx context.Context, slug string) (*usecase.CredentialsView, error)
 }
 
-func (m *mockSvc) Create(ctx context.Context, slug, dn string) (*usecase.ProjectView, error) {
+func (m *mockSvc) Create(ctx context.Context, slug, dn string, rt domain.RuntimeType) (*usecase.ProjectView, error) {
 	if m.CreateFn != nil {
-		return m.CreateFn(ctx, slug, dn)
+		return m.CreateFn(ctx, slug, dn, rt)
 	}
 	return stubView(slug, dn), nil
 }

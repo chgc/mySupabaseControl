@@ -87,6 +87,9 @@ func ResolveConfig(
 			val = entry.DefaultValue
 		case CategoryPerProject:
 			val = perProject[entry.Key]
+			if val == "" {
+				continue // skip PerProject keys not set for this runtime
+			}
 		case CategoryGeneratedSecret:
 			val = secrets[entry.Key]
 		case CategoryUserOverridable:
@@ -135,7 +138,7 @@ func ResolveConfig(
 // and are therefore absent from PortSet.
 func computePerProjectVars(project *ProjectModel, ports *PortSet) map[string]string {
 	kongHTTP := strconv.Itoa(ports.KongHTTP)
-	return map[string]string{
+	vars := map[string]string{
 		"KONG_HTTP_PORT":                kongHTTP,
 		"KONG_HTTPS_PORT":               strconv.Itoa(ports.KongHTTP + 1),
 		"POSTGRES_PORT":                 strconv.Itoa(ports.PostgresPort),
@@ -148,8 +151,18 @@ func computePerProjectVars(project *ProjectModel, ports *PortSet) map[string]str
 		"STUDIO_DEFAULT_PROJECT":        project.DisplayName,
 		"STORAGE_TENANT_ID":             "stub",
 		"POOLER_TENANT_ID":              project.Slug,
-		"DOCKER_SOCKET_LOCATION":        "/var/run/docker.sock",
 	}
+
+	// Runtime-specific values
+	switch project.RuntimeType {
+	case RuntimeDockerCompose:
+		vars["DOCKER_SOCKET_LOCATION"] = "/var/run/docker.sock"
+	case RuntimeKubernetes:
+		// K8s: Vector uses hostPath /var/log/pods instead of docker.sock.
+		// DOCKER_SOCKET_LOCATION is intentionally omitted.
+	}
+
+	return vars
 }
 
 // ExtractSecrets extracts GeneratedSecret key→value pairs from an existing

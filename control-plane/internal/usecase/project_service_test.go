@@ -20,17 +20,22 @@ func newTestService(t *testing.T, opts ...func(*testServiceOpts)) ProjectService
 		projectRepo:     &mockProjectRepo{},
 		configRepo:      &mockConfigRepo{},
 		adapter:         &domain.MockRuntimeAdapter{},
-		portAllocator:   &mockPortAllocator{},
+		portAllocator:   &domain.MockPortAllocator{},
 		secretGenerator: &mockSecretGenerator{},
 	}
 	for _, opt := range opts {
 		opt(o)
 	}
+	registry, regErr := domain.NewAdapterRegistry(domain.AdapterRegistryConfig{
+		RuntimeType:   domain.RuntimeDockerCompose,
+		Adapter:       o.adapter,
+		PortAllocator: o.portAllocator,
+	})
+	require.NoError(t, regErr)
 	svc, err := NewProjectService(Config{
 		ProjectRepo:     o.projectRepo,
 		ConfigRepo:      o.configRepo,
-		Adapter:         o.adapter,
-		PortAllocator:   o.portAllocator,
+		Registry:        registry,
 		SecretGenerator: o.secretGenerator,
 	})
 	require.NoError(t, err)
@@ -41,7 +46,7 @@ type testServiceOpts struct {
 	projectRepo     *mockProjectRepo
 	configRepo      *mockConfigRepo
 	adapter         *domain.MockRuntimeAdapter
-	portAllocator   *mockPortAllocator
+	portAllocator   *domain.MockPortAllocator
 	secretGenerator *mockSecretGenerator
 }
 
@@ -50,6 +55,7 @@ func stoppedProject(slug string) *domain.ProjectModel {
 	return &domain.ProjectModel{
 		Slug:           slug,
 		DisplayName:    "Test Project",
+		RuntimeType:    domain.RuntimeDockerCompose,
 		Status:         domain.StatusStopped,
 		PreviousStatus: domain.StatusCreating,
 		CreatedAt:      time.Now().UTC(),
@@ -68,15 +74,20 @@ func runningProject(slug string) *domain.ProjectModel {
 // --- NewProjectService validation ---
 
 func TestNewProjectService_MissingDeps(t *testing.T) {
+	mockRegistry, _ := domain.NewAdapterRegistry(domain.AdapterRegistryConfig{
+		RuntimeType:   domain.RuntimeDockerCompose,
+		Adapter:       &domain.MockRuntimeAdapter{},
+		PortAllocator: &domain.MockPortAllocator{},
+	})
+
 	cases := []struct {
 		name string
 		cfg  Config
 	}{
-		{"missing ProjectRepo", Config{ConfigRepo: &mockConfigRepo{}, Adapter: &domain.MockRuntimeAdapter{}, PortAllocator: &mockPortAllocator{}, SecretGenerator: &mockSecretGenerator{}}},
-		{"missing ConfigRepo", Config{ProjectRepo: &mockProjectRepo{}, Adapter: &domain.MockRuntimeAdapter{}, PortAllocator: &mockPortAllocator{}, SecretGenerator: &mockSecretGenerator{}}},
-		{"missing Adapter", Config{ProjectRepo: &mockProjectRepo{}, ConfigRepo: &mockConfigRepo{}, PortAllocator: &mockPortAllocator{}, SecretGenerator: &mockSecretGenerator{}}},
-		{"missing PortAllocator", Config{ProjectRepo: &mockProjectRepo{}, ConfigRepo: &mockConfigRepo{}, Adapter: &domain.MockRuntimeAdapter{}, SecretGenerator: &mockSecretGenerator{}}},
-		{"missing SecretGenerator", Config{ProjectRepo: &mockProjectRepo{}, ConfigRepo: &mockConfigRepo{}, Adapter: &domain.MockRuntimeAdapter{}, PortAllocator: &mockPortAllocator{}}},
+		{"missing ProjectRepo", Config{ConfigRepo: &mockConfigRepo{}, Registry: mockRegistry, SecretGenerator: &mockSecretGenerator{}}},
+		{"missing ConfigRepo", Config{ProjectRepo: &mockProjectRepo{}, Registry: mockRegistry, SecretGenerator: &mockSecretGenerator{}}},
+		{"missing Registry", Config{ProjectRepo: &mockProjectRepo{}, ConfigRepo: &mockConfigRepo{}, SecretGenerator: &mockSecretGenerator{}}},
+		{"missing SecretGenerator", Config{ProjectRepo: &mockProjectRepo{}, ConfigRepo: &mockConfigRepo{}, Registry: mockRegistry}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -104,7 +115,7 @@ func TestCreate_HappyPath(t *testing.T) {
 	}
 
 	svc := newTestService(t, func(o *testServiceOpts) { o.projectRepo = projRepo })
-	view, err := svc.Create(context.Background(), "my-project", "My Project")
+	view, err := svc.Create(context.Background(), "my-project", "My Project", domain.RuntimeDockerCompose)
 
 	require.NoError(t, err)
 	assert.Equal(t, "my-project", createdSlug)
@@ -115,7 +126,7 @@ func TestCreate_HappyPath(t *testing.T) {
 
 func TestCreate_InvalidSlug(t *testing.T) {
 	svc := newTestService(t)
-	_, err := svc.Create(context.Background(), "INVALID SLUG!", "Name")
+	_, err := svc.Create(context.Background(), "INVALID SLUG!", "Name", domain.RuntimeDockerCompose)
 	require.Error(t, err)
 	var ue *UsecaseError
 	require.ErrorAs(t, err, &ue)
@@ -129,7 +140,7 @@ func TestCreate_SlugConflict(t *testing.T) {
 		},
 	}
 	svc := newTestService(t, func(o *testServiceOpts) { o.projectRepo = projRepo })
-	_, err := svc.Create(context.Background(), "my-project", "My Project")
+	_, err := svc.Create(context.Background(), "my-project", "My Project", domain.RuntimeDockerCompose)
 	require.Error(t, err)
 	var ue *UsecaseError
 	require.ErrorAs(t, err, &ue)
@@ -158,7 +169,7 @@ func TestCreate_AdapterCreateFailure_SetsError(t *testing.T) {
 		o.projectRepo = projRepo
 		o.adapter = adapter
 	})
-	_, err := svc.Create(context.Background(), "my-project", "My Project")
+	_, err := svc.Create(context.Background(), "my-project", "My Project", domain.RuntimeDockerCompose)
 
 	require.Error(t, err)
 	var ue *UsecaseError

@@ -97,6 +97,9 @@ func (a *ComposePortAllocator) AllocatePorts(ctx context.Context) (*domain.PortS
 	// Step 2: build flat usedSet across all port types.
 	usedSet := make(map[int]struct{})
 	for _, p := range projects {
+		if p.RuntimeType != domain.RuntimeDockerCompose {
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

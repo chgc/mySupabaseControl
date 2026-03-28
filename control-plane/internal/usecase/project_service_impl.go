@@ -17,8 +17,8 @@ type ProjectService interface {
 	// persists the project record, and creates runtime resources.
 	// Terminates in stopped state. Does NOT start the project.
 	// Returns ErrCodeConflict if the slug already exists.
-	// Returns ErrCodeInvalidInput if the slug or displayName fails validation.
-	Create(ctx context.Context, slug, displayName string) (*ProjectView, error)
+	// Returns ErrCodeInvalidInput if the slug, displayName, or runtimeType fails validation.
+	Create(ctx context.Context, slug, displayName string, runtimeType domain.RuntimeType) (*ProjectView, error)
 
 	// List returns all active projects (excluding destroyed ones).
 	// Health and Config fields are not populated.
@@ -62,11 +62,8 @@ func NewProjectService(cfg Config) (ProjectService, error) {
 	if cfg.ConfigRepo == nil {
 		return nil, fmt.Errorf("usecase: Config.ConfigRepo is required")
 	}
-	if cfg.Adapter == nil {
-		return nil, fmt.Errorf("usecase: Config.Adapter is required")
-	}
-	if cfg.PortAllocator == nil {
-		return nil, fmt.Errorf("usecase: Config.PortAllocator is required")
+	if cfg.Registry == nil {
+		return nil, fmt.Errorf("usecase: Config.Registry is required")
 	}
 	if cfg.SecretGenerator == nil {
 		return nil, fmt.Errorf("usecase: Config.SecretGenerator is required")
@@ -78,8 +75,7 @@ func NewProjectService(cfg Config) (ProjectService, error) {
 	return &projectService{
 		projectRepo:     cfg.ProjectRepo,
 		configRepo:      cfg.ConfigRepo,
-		adapter:         cfg.Adapter,
-		portAllocator:   cfg.PortAllocator,
+		registry:        cfg.Registry,
 		secretGenerator: cfg.SecretGenerator,
 		log:             logger,
 	}, nil
@@ -88,22 +84,52 @@ func NewProjectService(cfg Config) (ProjectService, error) {
 type projectService struct {
 	projectRepo     store.ProjectRepository
 	configRepo      store.ConfigRepository
-	adapter         domain.RuntimeAdapter
-	portAllocator   domain.PortAllocator
+	registry        domain.AdapterRegistry
 	secretGenerator domain.SecretGenerator
 	log             *slog.Logger
 }
 
+// adapterFor resolves the RuntimeAdapter for a project's runtime type.
+func (s *projectService) adapterFor(project *domain.ProjectModel) (domain.RuntimeAdapter, error) {
+	adapter, err := s.registry.GetAdapter(project.RuntimeType)
+	if err != nil {
+		return nil, &UsecaseError{
+			Code:    ErrCodeInternal,
+			Message: fmt.Sprintf("no adapter for runtime %q", project.RuntimeType),
+			Err:     err,
+		}
+	}
+	return adapter, nil
+}
+
+// portAllocatorFor resolves the PortAllocator for a project's runtime type.
+func (s *projectService) portAllocatorFor(project *domain.ProjectModel) (domain.PortAllocator, error) {
+	pa, err := s.registry.GetPortAllocator(project.RuntimeType)
+	if err != nil {
+		return nil, &UsecaseError{
+			Code:    ErrCodeInternal,
+			Message: fmt.Sprintf("no port allocator for runtime %q", project.RuntimeType),
+			Err:     err,
+		}
+	}
+	return pa, nil
+}
+
 // --- Create ---
 
-func (s *projectService) Create(ctx context.Context, slug, displayName string) (*ProjectView, error) {
+func (s *projectService) Create(ctx context.Context, slug, displayName string, runtimeType domain.RuntimeType) (*ProjectView, error) {
 	if err := domain.ValidateSlug(slug); err != nil {
 		return nil, &UsecaseError{Code: ErrCodeInvalidInput, Message: err.Error(), Err: err}
 	}
 
-	project, err := domain.NewProject(slug, displayName)
+	project, err := domain.NewProject(slug, displayName, runtimeType)
 	if err != nil {
 		return nil, &UsecaseError{Code: ErrCodeInvalidInput, Message: err.Error(), Err: err}
+	}
+
+	adapter, err := s.adapterFor(project)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := s.projectRepo.Create(ctx, project); err != nil {
@@ -120,7 +146,7 @@ func (s *projectService) Create(ctx context.Context, slug, displayName string) (
 		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to provision config", Err: provErr}
 	}
 
-	if err := s.adapter.Create(ctx, project, config); err != nil {
+	if err := adapter.Create(ctx, project, config); err != nil {
 		s.setErrorAndLog(ctx, project, err.Error())
 		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to create runtime resources", Err: err}
 	}
@@ -166,7 +192,9 @@ func (s *projectService) Get(ctx context.Context, slug string) (*ProjectView, er
 
 	var health *domain.ProjectHealth
 	if project.Status == domain.StatusRunning {
-		health, _ = s.adapter.Status(ctx, project) // best-effort
+		if adapter, err := s.adapterFor(project); err == nil {
+			health, _ = adapter.Status(ctx, project) // best-effort
+		}
 	}
 
 	return toProjectView(project, config, health), nil
@@ -186,13 +214,18 @@ func (s *projectService) Start(ctx context.Context, slug string) (*ProjectView, 
 		}
 	}
 
+	adapter, err := s.adapterFor(project)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := s.projectRepo.UpdateStatus(ctx, slug, domain.StatusStarting, project.Status, ""); err != nil {
 		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to update status", Err: err}
 	}
 	project.PreviousStatus = project.Status
 	project.Status = domain.StatusStarting
 
-	if err := s.adapter.Start(ctx, project); err != nil {
+	if err := adapter.Start(ctx, project); err != nil {
 		s.setErrorAndLog(ctx, project, err.Error())
 		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to start project", Err: err}
 	}
@@ -205,7 +238,7 @@ func (s *projectService) Start(ctx context.Context, slug string) (*ProjectView, 
 		project.Status = domain.StatusRunning
 	}
 
-	health, _ := s.adapter.Status(ctx, project) // best-effort
+	health, _ := adapter.Status(ctx, project) // best-effort
 	return toProjectView(project, nil, health), nil
 }
 
@@ -232,6 +265,11 @@ func (s *projectService) Stop(ctx context.Context, slug string) (*ProjectView, e
 // stopProject is an internal helper used by Stop and Reset.
 // It mutates project.Status in-place on success.
 func (s *projectService) stopProject(ctx context.Context, project *domain.ProjectModel) error {
+	adapter, err := s.adapterFor(project)
+	if err != nil {
+		return err
+	}
+
 	prev := project.Status
 	if err := s.projectRepo.UpdateStatus(ctx, project.Slug, domain.StatusStopping, prev, ""); err != nil {
 		return &UsecaseError{Code: ErrCodeInternal, Message: "failed to update status", Err: err}
@@ -239,7 +277,7 @@ func (s *projectService) stopProject(ctx context.Context, project *domain.Projec
 	project.PreviousStatus = prev
 	project.Status = domain.StatusStopping
 
-	if err := s.adapter.Stop(ctx, project); err != nil {
+	if err := adapter.Stop(ctx, project); err != nil {
 		s.setErrorAndLog(ctx, project, err.Error())
 		return &UsecaseError{Code: ErrCodeInternal, Message: "failed to stop project", Err: err}
 	}
@@ -260,6 +298,11 @@ func (s *projectService) Reset(ctx context.Context, slug string) (*ProjectView, 
 	project, err := s.projectRepo.GetBySlug(ctx, slug)
 	if err != nil {
 		return nil, mapNotFoundErr(slug, err)
+	}
+
+	adapter, err := s.adapterFor(project)
+	if err != nil {
+		return nil, err
 	}
 
 	// Stop first if running.
@@ -285,7 +328,7 @@ func (s *projectService) Reset(ctx context.Context, slug string) (*ProjectView, 
 	project.Status = domain.StatusDestroying
 
 	// Destroy runtime resources.
-	if err := s.adapter.Destroy(ctx, project); err != nil {
+	if err := adapter.Destroy(ctx, project); err != nil {
 		s.setErrorAndLog(ctx, project, err.Error())
 		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to destroy runtime resources", Err: err}
 	}
@@ -305,15 +348,15 @@ func (s *projectService) Reset(ctx context.Context, slug string) (*ProjectView, 
 	project.Status = domain.StatusCreating
 
 	// Create new runtime resources.
-	if err := s.adapter.Create(ctx, project, newConfig); err != nil {
+	if err := adapter.Create(ctx, project, newConfig); err != nil {
 		s.setErrorAndLog(ctx, project, err.Error())
 		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to create runtime resources", Err: err}
 	}
 
 	// Start services.
-	if err := s.adapter.Start(ctx, project); err != nil {
+	if err := adapter.Start(ctx, project); err != nil {
 		// Best-effort cleanup of the newly created resources.
-		if destroyErr := s.adapter.Destroy(ctx, project); destroyErr != nil {
+		if destroyErr := adapter.Destroy(ctx, project); destroyErr != nil {
 			s.log.Error("orphaned_runtime_resource: failed to clean up after start failure during reset",
 				"slug", slug, "start_error", err, "destroy_error", destroyErr)
 		}
@@ -329,7 +372,7 @@ func (s *projectService) Reset(ctx context.Context, slug string) (*ProjectView, 
 		project.Status = domain.StatusRunning
 	}
 
-	health, _ := s.adapter.Status(ctx, project) // best-effort
+	health, _ := adapter.Status(ctx, project) // best-effort
 	return toProjectView(project, newConfig, health), nil
 }
 
@@ -347,6 +390,11 @@ func (s *projectService) Delete(ctx context.Context, slug string) (*ProjectView,
 		}
 	}
 
+	adapter, err := s.adapterFor(project)
+	if err != nil {
+		return nil, err
+	}
+
 	prev := project.Status
 	if err := s.projectRepo.UpdateStatus(ctx, slug, domain.StatusDestroying, prev, ""); err != nil {
 		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to update status", Err: err}
@@ -354,7 +402,7 @@ func (s *projectService) Delete(ctx context.Context, slug string) (*ProjectView,
 	project.PreviousStatus = prev
 	project.Status = domain.StatusDestroying
 
-	if err := s.adapter.Destroy(ctx, project); err != nil {
+	if err := adapter.Destroy(ctx, project); err != nil {
 		s.setErrorAndLog(ctx, project, err.Error())
 		return nil, &UsecaseError{Code: ErrCodeInternal, Message: "failed to destroy runtime resources", Err: err}
 	}
@@ -379,7 +427,12 @@ func (s *projectService) provisionConfig(ctx context.Context, project *domain.Pr
 		return nil, fmt.Errorf("generate secrets: %w", err)
 	}
 
-	portSet, err := s.portAllocator.AllocatePorts(ctx)
+	pa, err := s.portAllocatorFor(project)
+	if err != nil {
+		return nil, fmt.Errorf("get port allocator: %w", err)
+	}
+
+	portSet, err := pa.AllocatePorts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("allocate ports: %w", err)
 	}
@@ -474,6 +527,7 @@ func toProjectView(p *domain.ProjectModel, config *domain.ProjectConfig, health 
 	v := &ProjectView{
 		Slug:           p.Slug,
 		DisplayName:    p.DisplayName,
+		RuntimeType:    string(p.RuntimeType),
 		Status:         string(p.Status),
 		PreviousStatus: string(p.PreviousStatus),
 		LastError:      p.LastError,
