@@ -16,13 +16,13 @@ func makeRendererConfig() *domain.ProjectConfig {
 	return &domain.ProjectConfig{
 		ProjectSlug: "test-project",
 		Values: map[string]string{
-			"JWT_SECRET":       "test-jwt-secret",
-			"ANON_KEY":         "test-anon-key",
-			"SERVICE_ROLE_KEY": "test-service-role-key",
+			"JWT_SECRET":        "test-jwt-secret",
+			"ANON_KEY":          "test-anon-key",
+			"SERVICE_ROLE_KEY":  "test-service-role-key",
 			"POSTGRES_PASSWORD": "test-pg-password",
-			"KONG_HTTP_PORT":   "8000",
-			"POSTGRES_PORT":    "5432",
-			"SITE_URL":         "http://localhost:3000",
+			"KONG_HTTP_PORT":    "8000",
+			"POSTGRES_PORT":     "5432",
+			"SITE_URL":          "http://localhost:3000",
 		},
 	}
 }

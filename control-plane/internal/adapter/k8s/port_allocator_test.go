@@ -31,7 +31,7 @@ func (m *mockProjectRepo) GetBySlug(_ context.Context, _ string) (*domain.Projec
 func (m *mockProjectRepo) UpdateStatus(_ context.Context, _ string, _, _ domain.ProjectStatus, _ string) error {
 	return nil
 }
-func (m *mockProjectRepo) Delete(_ context.Context, _ string) error { return nil }
+func (m *mockProjectRepo) Delete(_ context.Context, _ string) error         { return nil }
 func (m *mockProjectRepo) Exists(_ context.Context, _ string) (bool, error) { return false, nil }
 
 type mockConfigRepo struct {
