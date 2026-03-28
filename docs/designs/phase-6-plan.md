@@ -102,7 +102,7 @@ Phase 6 分為兩組：先進行**架構調整**（使 Control Plane 支援多 r
 | 3 | K8s Config Renderer（Helm Values） | `docs/designs/phase_6/k8s-values-renderer.md` | done | 實作 `ConfigRenderer` 介面，將 `ProjectConfig` 渲染為 Helm values.yaml 格式 |
 | 4 | K8s Status Parser | `docs/designs/phase_6/k8s-status-parser.md` | done | 解析 `kubectl get pods -o json` 為 `ProjectHealth` |
 | 5 | K8s Port Allocator（NodePort） | `docs/designs/phase_6/k8s-port-allocator.md` | done | 在 NodePort 範圍分配無衝突的 port set |
-| 6 | K8s Adapter 核心 | `docs/designs/phase_6/k8s-adapter.md` | 未開始 | 實作完整 `RuntimeAdapter` 介面（7 方法），整合 renderer、parser、allocator，shell out to helm/kubectl |
+| 6 | K8s Adapter 核心 | `docs/designs/phase_6/k8s-adapter.md` | done | 實作完整 `RuntimeAdapter` 介面（7 方法），整合 renderer、parser、allocator，shell out to helm/kubectl |
 
 ---
 

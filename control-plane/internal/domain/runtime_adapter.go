@@ -20,14 +20,14 @@ type RuntimeAdapter interface {
 
 	// Start deploys and starts all project services.
 	// Docker Compose: docker compose up -d
-	// K8s: kubectl apply / helm install
+	// K8s: helm upgrade --install
 	// Precondition: project.Status == stopped || starting
 	// Postcondition: success → running; failure → error (returns *StartError)
 	Start(ctx context.Context, project *ProjectModel) error
 
 	// Stop halts all project services while preserving data.
-	// Docker Compose: docker compose down (no -v)
-	// K8s: scale replicas to 0
+	// Docker Compose: docker compose stop
+	// K8s: helm uninstall (releases all pod resources; namespace and PVCs preserved)
 	// Precondition: project.Status == running || stopping
 	// Postcondition: success → stopped; failure → error
 	Stop(ctx context.Context, project *ProjectModel) error
