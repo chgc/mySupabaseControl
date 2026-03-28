@@ -7,7 +7,7 @@
 
 ## 狀態
 
-approved
+done
 
 ## Phase
 
@@ -351,6 +351,6 @@ func (m *HelmValuesMapper) MapValues(config *ProjectConfig) (map[string]any, err
 
 <!-- 所有任務完成後，由 code-review subagent 審查 feature branch 對 main 的完整 diff -->
 
-- **審查結果：**
-- **發現問題：**
-- **修正記錄：**
+- **審查結果：** FIX_REQUIRED → PASS
+- **發現問題：** gofmt 格式化問題
+- **修正記錄：** 執行 `gofmt -w` 修正格式

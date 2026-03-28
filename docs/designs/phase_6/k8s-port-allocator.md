@@ -7,7 +7,7 @@
 
 ## 狀態
 
-approved
+done
 
 ## Phase
 
@@ -389,6 +389,10 @@ func (m *mockConfigRepo) DeleteConfig(_ context.Context, _ string) error { retur
 
 <!-- 所有任務完成後，由 code-review subagent 審查 feature branch 對 main 的完整 diff -->
 
-- **審查結果：**
+- **審查結果：** FIX_REQUIRED → PASS
 - **發現問題：**
+  1. gofmt 格式化問題
+  2. ComposePortAllocator 缺少 RuntimeType 過濾（跨 runtime 問題）
 - **修正記錄：**
+  1. 執行 `gofmt -w` 修正格式
+  2. 在 ComposePortAllocator 中加入 RuntimeType 過濾，更新相關測試
