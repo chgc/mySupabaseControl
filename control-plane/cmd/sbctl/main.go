@@ -88,6 +88,11 @@ func buildRootCmd() *cobra.Command {
 	// skipped (deps == nil → panic). If a subcommand needs pre-run logic,
 	// extract a helper function and call it from both layers.
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		// Skip BuildDeps for shell completion commands
+		if cmd.Name() == cobra.ShellCompRequestCmd || cmd.Name() == cobra.ShellCompNoDescRequestCmd || isCompletionCmd(cmd) {
+			return nil
+		}
+
 		if err := validateOutput(output); err != nil {
 			fmt.Fprintln(cmd.ErrOrStderr(), "Error:", err)
 			return &ExitError{Code: 1, Err: err}
@@ -108,6 +113,7 @@ func buildRootCmd() *cobra.Command {
 
 	root.AddCommand(buildProjectCmd(&deps, &output))
 	root.AddCommand(buildMCPCmd())
+	root.AddCommand(buildCompletionCmd())
 
 	root.SetFlagErrorFunc(flagErrorWithSuggestions)
 
