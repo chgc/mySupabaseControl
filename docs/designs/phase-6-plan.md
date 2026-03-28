@@ -146,19 +146,25 @@ Phase 6 分為兩組：先進行**架構調整**（使 Control Plane 支援多 r
 
 ### 設計階段
 
-- [ ] 所有功能的設計文件狀態為 `approved`（通過兩位 reviewer 審查）
-  - [ ] `multi-runtime-infra.md` — approved
-  - [ ] `helm-values-mapping.md` — approved
-  - [ ] `k8s-values-renderer.md` — approved
-  - [ ] `k8s-status-parser.md` — approved
-  - [ ] `k8s-port-allocator.md` — approved
-  - [ ] `k8s-adapter.md` — approved
+- [x] 所有功能的設計文件狀態為 `approved`（通過兩位 reviewer 審查）
+  - [x] `multi-runtime-infra.md` — done
+  - [x] `helm-values-mapping.md` — done
+  - [x] `k8s-values-renderer.md` — done
+  - [x] `k8s-status-parser.md` — done
+  - [x] `k8s-port-allocator.md` — done
+  - [x] `k8s-adapter.md` — done
 
 ### 實作階段
 
 | 任務 ID | 說明 | 狀態 |
 |---------|------|------|
-| 待設計審查通過後產生 | — | 未開始 |
+| multi-runtime-infra | RuntimeType 欄位、AdapterRegistry、ProjectService 重構、CLI --runtime 旗標 | ✅ 完成 |
+| helm-values-mapping | HelmValuesMapper（93 key 對映表） | ✅ 完成 |
+| k8s-values-renderer | K8sValuesRenderer（ConfigRenderer 介面實作） | ✅ 完成 |
+| k8s-status-parser | parseK8sPods（kubectl JSON → ProjectHealth） | ✅ 完成 |
+| k8s-port-allocator | K8sPortAllocator（NodePort 範圍分配） | ✅ 完成 |
+| k8s-adapter | K8sAdapter（全部 7 個 RuntimeAdapter 方法） | ✅ 完成 |
+| k8s-integration-test | integration_test.go（FullLifecycle + CreateIdempotent） | ✅ 完成 |
 
 ### Phase 整合驗證
 
@@ -229,3 +235,4 @@ sbctl project delete compose-test
 | 日期 | 變更內容 | 原因 |
 |------|---------|------|
 | 2026-03-28 | 初稿建立；包含完整架構審計結果 | Phase 6 規劃開始 |
+| 2026-03-28 | 退出標準全部達成；Phase 6 標記完成 | 所有實作任務完成、單元測試全數通過 |
