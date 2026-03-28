@@ -194,17 +194,17 @@ func TestMapValues_NilConfig(t *testing.T) {
 
 func TestMapValues_GeneratedSecrets(t *testing.T) {
 	config := newTestConfig(map[string]string{
-		"JWT_SECRET":                   "test-jwt-secret",
-		"ANON_KEY":                     "test-anon-key",
-		"SERVICE_ROLE_KEY":             "test-service-key",
-		"POSTGRES_PASSWORD":            "test-pg-pass",
-		"DASHBOARD_PASSWORD":           "test-dash-pass",
-		"SECRET_KEY_BASE":              "test-secret-key-base",
-		"VAULT_ENC_KEY":                "should-be-skipped",
-		"PG_META_CRYPTO_KEY":           "test-meta-key",
-		"LOGFLARE_PUBLIC_ACCESS_TOKEN": "test-lf-pub",
+		"JWT_SECRET":                    "test-jwt-secret",
+		"ANON_KEY":                      "test-anon-key",
+		"SERVICE_ROLE_KEY":              "test-service-key",
+		"POSTGRES_PASSWORD":             "test-pg-pass",
+		"DASHBOARD_PASSWORD":            "test-dash-pass",
+		"SECRET_KEY_BASE":               "test-secret-key-base",
+		"VAULT_ENC_KEY":                 "should-be-skipped",
+		"PG_META_CRYPTO_KEY":            "test-meta-key",
+		"LOGFLARE_PUBLIC_ACCESS_TOKEN":  "test-lf-pub",
 		"LOGFLARE_PRIVATE_ACCESS_TOKEN": "test-lf-priv",
-		"S3_PROTOCOL_ACCESS_KEY_ID":    "test-s3-key",
+		"S3_PROTOCOL_ACCESS_KEY_ID":     "test-s3-key",
 		"S3_PROTOCOL_ACCESS_KEY_SECRET": "test-s3-secret",
 	})
 
@@ -248,18 +248,18 @@ func TestMapValues_GeneratedSecrets(t *testing.T) {
 
 func TestMapValues_PerProjectKeys(t *testing.T) {
 	config := newTestConfig(map[string]string{
-		"KONG_HTTP_PORT":               "30080",
-		"KONG_HTTPS_PORT":              "30443",
-		"POSTGRES_PORT":                "30432",
-		"API_EXTERNAL_URL":             "http://localhost:30080",
-		"SUPABASE_PUBLIC_URL":          "http://localhost:30080",
-		"SITE_URL":                     "http://localhost:3000",
-		"PROJECT_DATA_DIR":             "/data/test",
-		"STUDIO_DEFAULT_ORGANIZATION":  "TestOrg",
-		"STUDIO_DEFAULT_PROJECT":       "TestProj",
-		"STORAGE_TENANT_ID":            "test-tenant",
-		"POOLER_TENANT_ID":             "skip-me",
-		"DOCKER_SOCKET_LOCATION":       "/var/run/docker.sock",
+		"KONG_HTTP_PORT":                "30080",
+		"KONG_HTTPS_PORT":               "30443",
+		"POSTGRES_PORT":                 "30432",
+		"API_EXTERNAL_URL":              "http://localhost:30080",
+		"SUPABASE_PUBLIC_URL":           "http://localhost:30080",
+		"SITE_URL":                      "http://localhost:3000",
+		"PROJECT_DATA_DIR":              "/data/test",
+		"STUDIO_DEFAULT_ORGANIZATION":   "TestOrg",
+		"STUDIO_DEFAULT_PROJECT":        "TestProj",
+		"STORAGE_TENANT_ID":             "test-tenant",
+		"POOLER_TENANT_ID":              "skip-me",
+		"DOCKER_SOCKET_LOCATION":        "/var/run/docker.sock",
 		"POOLER_PROXY_PORT_TRANSACTION": "6543",
 	})
 
@@ -278,6 +278,9 @@ func TestMapValues_PerProjectKeys(t *testing.T) {
 	}
 	if got := getNestedValue(result, "service.db.port"); got != 30432 {
 		t.Errorf("service.db.port: got %v, want 30432", got)
+	}
+	if got := getNestedValue(result, "service.db.nodePort"); got != 30432 {
+		t.Errorf("service.db.nodePort: got %v, want 30432", got)
 	}
 	if got := getNestedValue(result, "environment.auth.API_EXTERNAL_URL"); got != "http://localhost:30080" {
 		t.Errorf("API_EXTERNAL_URL: got %v", got)

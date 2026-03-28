@@ -82,16 +82,12 @@ func (m *HelmValuesMapper) MapValues(config *domain.ProjectConfig) (map[string]a
 		setNestedValue(result, mapping.ValuesPath, finalValue)
 	}
 
-	// Set NodePort values from port config keys.
-	if kongPort, ok := config.GetSensitive("KONG_HTTP_PORT"); ok {
-		if v, err := strconv.Atoi(kongPort); err == nil {
-			setNestedValue(result, "service.kong.nodePort", v)
-		}
+	// Copy port values to nodePort (ports already validated by toInt Transform above).
+	if v := getNestedInt(result, "service.kong.port"); v != 0 {
+		setNestedValue(result, "service.kong.nodePort", v)
 	}
-	if dbPort, ok := config.GetSensitive("POSTGRES_PORT"); ok {
-		if v, err := strconv.Atoi(dbPort); err == nil {
-			setNestedValue(result, "service.db.nodePort", v)
-		}
+	if v := getNestedInt(result, "service.db.port"); v != 0 {
+		setNestedValue(result, "service.db.nodePort", v)
 	}
 
 	return result, nil
@@ -134,6 +130,22 @@ func toInt(value string) (any, error) {
 		return nil, fmt.Errorf("expected integer: %w", err)
 	}
 	return v, nil
+}
+
+// getNestedInt retrieves an int value from a nested map using a dot-separated path.
+// Returns 0 if the path doesn't exist or the value is not an int.
+func getNestedInt(m map[string]any, path string) int {
+	parts := strings.Split(path, ".")
+	current := any(m)
+	for _, part := range parts {
+		cm, ok := current.(map[string]any)
+		if !ok {
+			return 0
+		}
+		current = cm[part]
+	}
+	v, _ := current.(int)
+	return v
 }
 
 // setNestedValue sets a value in a nested map using a dot-separated path.
@@ -184,21 +196,21 @@ func defaultMappings() []HelmMapping {
 
 		// === PerProject (13 keys: 8 mapped, 5 skipped) ===
 		{ConfigKey: "KONG_HTTP_PORT", ValuesPath: "service.kong.port", Transform: toInt},
-		{ConfigKey: "KONG_HTTPS_PORT", ValuesPath: ""},       // K8s doesn't need HTTPS port
+		{ConfigKey: "KONG_HTTPS_PORT", ValuesPath: ""}, // K8s doesn't need HTTPS port
 		{ConfigKey: "POSTGRES_PORT", ValuesPath: "service.db.port", Transform: toInt},
 		{ConfigKey: "POOLER_PROXY_PORT_TRANSACTION", ValuesPath: ""}, // chart has no supavisor
 		{ConfigKey: "API_EXTERNAL_URL", ValuesPath: "environment.auth.API_EXTERNAL_URL"},
 		{ConfigKey: "SUPABASE_PUBLIC_URL", ValuesPath: "environment.studio.SUPABASE_PUBLIC_URL"},
 		{ConfigKey: "SITE_URL", ValuesPath: "environment.auth.GOTRUE_SITE_URL"},
-		{ConfigKey: "PROJECT_DATA_DIR", ValuesPath: ""},      // K8s uses PVC
+		{ConfigKey: "PROJECT_DATA_DIR", ValuesPath: ""}, // K8s uses PVC
 		{ConfigKey: "STUDIO_DEFAULT_ORGANIZATION", ValuesPath: "environment.studio.DEFAULT_ORGANIZATION_NAME"},
 		{ConfigKey: "STUDIO_DEFAULT_PROJECT", ValuesPath: "environment.studio.DEFAULT_PROJECT_NAME"},
 		{ConfigKey: "STORAGE_TENANT_ID", ValuesPath: "environment.storage.TENANT_ID"},
-		{ConfigKey: "POOLER_TENANT_ID", ValuesPath: ""},      // chart has no supavisor
+		{ConfigKey: "POOLER_TENANT_ID", ValuesPath: ""},       // chart has no supavisor
 		{ConfigKey: "DOCKER_SOCKET_LOCATION", ValuesPath: ""}, // K8s doesn't use docker socket
 
 		// === StaticDefault (38 keys: 32 mapped, 6 skipped) ===
-		{ConfigKey: "POSTGRES_HOST", ValuesPath: ""},          // chart auto-configures pod DNS
+		{ConfigKey: "POSTGRES_HOST", ValuesPath: ""}, // chart auto-configures pod DNS
 		{ConfigKey: "POSTGRES_DB", ValuesPath: "secret.db.database"},
 		{ConfigKey: "GOTRUE_API_HOST", ValuesPath: "environment.auth.GOTRUE_API_HOST"},
 		{ConfigKey: "GOTRUE_API_PORT", ValuesPath: "environment.auth.GOTRUE_API_PORT"},
@@ -217,7 +229,7 @@ func defaultMappings() []HelmMapping {
 		{ConfigKey: "APP_NAME", ValuesPath: "environment.realtime.APP_NAME"},
 		{ConfigKey: "SEED_SELF_HOST", ValuesPath: "environment.realtime.SEED_SELF_HOST"},
 		{ConfigKey: "RUN_JANITOR", ValuesPath: "environment.realtime.RUN_JANITOR"},
-		{ConfigKey: "STORAGE_BACKEND", ValuesPath: ""},        // chart manages storage backend
+		{ConfigKey: "STORAGE_BACKEND", ValuesPath: ""}, // chart manages storage backend
 		{ConfigKey: "FILE_SIZE_LIMIT", ValuesPath: "environment.storage.FILE_SIZE_LIMIT"},
 		{ConfigKey: "ENABLE_IMAGE_TRANSFORMATION", ValuesPath: "environment.storage.ENABLE_IMAGE_TRANSFORMATION"},
 		{ConfigKey: "IMGPROXY_LOCAL_FILESYSTEM_ROOT", ValuesPath: "environment.imgproxy.IMGPROXY_LOCAL_FILESYSTEM_ROOT"},
@@ -226,12 +238,12 @@ func defaultMappings() []HelmMapping {
 		{ConfigKey: "DB_SCHEMA", ValuesPath: "environment.analytics.DB_SCHEMA"},
 		{ConfigKey: "LOGFLARE_SINGLE_TENANT", ValuesPath: "environment.analytics.LOGFLARE_SINGLE_TENANT"},
 		{ConfigKey: "LOGFLARE_SUPABASE_MODE", ValuesPath: "environment.analytics.LOGFLARE_SUPABASE_MODE"},
-		{ConfigKey: "CLUSTER_POSTGRES", ValuesPath: ""},       // supavisor only
+		{ConfigKey: "CLUSTER_POSTGRES", ValuesPath: ""}, // supavisor only
 		{ConfigKey: "REGION", ValuesPath: "environment.storage.REGION"},
-		{ConfigKey: "POOLER_POOL_MODE", ValuesPath: ""},       // supavisor only
+		{ConfigKey: "POOLER_POOL_MODE", ValuesPath: ""}, // supavisor only
 		{ConfigKey: "NEXT_PUBLIC_ENABLE_LOGS", ValuesPath: "environment.studio.NEXT_PUBLIC_ENABLE_LOGS"},
 		{ConfigKey: "NEXT_ANALYTICS_BACKEND_PROVIDER", ValuesPath: "environment.studio.NEXT_ANALYTICS_BACKEND_PROVIDER"},
-		{ConfigKey: "HOSTNAME", ValuesPath: ""},               // K8s auto-manages hostname
+		{ConfigKey: "HOSTNAME", ValuesPath: ""}, // K8s auto-manages hostname
 		{ConfigKey: "DISABLE_HEALTHCHECK_LOGGING", ValuesPath: "environment.realtime.DISABLE_HEALTHCHECK_LOGGING"},
 		{ConfigKey: "REQUEST_ALLOW_X_FORWARDED_PATH", ValuesPath: "environment.storage.REQUEST_ALLOW_X_FORWARDED_PATH"},
 		{ConfigKey: "PG_META_PORT", ValuesPath: "environment.meta.PG_META_PORT"},
@@ -259,7 +271,7 @@ func defaultMappings() []HelmMapping {
 		{ConfigKey: "MAILER_URLPATHS_RECOVERY", ValuesPath: "environment.auth.GOTRUE_MAILER_URLPATHS_RECOVERY"},
 		{ConfigKey: "MAILER_URLPATHS_EMAIL_CHANGE", ValuesPath: "environment.auth.GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE"},
 		{ConfigKey: "FUNCTIONS_VERIFY_JWT", ValuesPath: "environment.functions.VERIFY_JWT"},
-		{ConfigKey: "IMGPROXY_AUTO_WEBP", ValuesPath: ""},     // chart uses IMGPROXY_ENABLE_WEBP_DETECTION
+		{ConfigKey: "IMGPROXY_AUTO_WEBP", ValuesPath: ""},          // chart uses IMGPROXY_ENABLE_WEBP_DETECTION
 		{ConfigKey: "IMGPROXY_MAX_SRC_RESOLUTION", ValuesPath: ""}, // chart doesn't use this key
 		{ConfigKey: "GLOBAL_S3_BUCKET", ValuesPath: "environment.storage.GLOBAL_S3_BUCKET"},
 		{ConfigKey: "OPENAI_API_KEY", ValuesPath: "secret.dashboard.openAiApiKey"},
