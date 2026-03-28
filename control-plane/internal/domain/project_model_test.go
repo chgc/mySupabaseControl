@@ -17,7 +17,7 @@ import (
 func TestNewProject(t *testing.T) {
 	t.Run("valid creates project with creating status", func(t *testing.T) {
 		before := time.Now().UTC()
-		p, err := domain.NewProject("my-project", "My Project")
+		p, err := domain.NewProject("my-project", "My Project", domain.RuntimeDockerCompose)
 		require.NoError(t, err)
 		assert.Equal(t, "my-project", p.Slug)
 		assert.Equal(t, "My Project", p.DisplayName)
@@ -27,30 +27,52 @@ func TestNewProject(t *testing.T) {
 	})
 
 	t.Run("trims whitespace from displayName", func(t *testing.T) {
-		p, err := domain.NewProject("abc", "  hello  ")
+		p, err := domain.NewProject("abc", "  hello  ", domain.RuntimeDockerCompose)
 		require.NoError(t, err)
 		assert.Equal(t, "hello", p.DisplayName)
 	})
 
 	t.Run("empty slug returns error", func(t *testing.T) {
-		_, err := domain.NewProject("", "Name")
+		_, err := domain.NewProject("", "Name", domain.RuntimeDockerCompose)
 		require.Error(t, err)
 	})
 
 	t.Run("empty displayName returns ErrInvalidDisplayName", func(t *testing.T) {
-		_, err := domain.NewProject("abc", "")
+		_, err := domain.NewProject("abc", "", domain.RuntimeDockerCompose)
 		require.ErrorIs(t, err, domain.ErrInvalidDisplayName)
 	})
 
 	t.Run("whitespace-only displayName returns ErrInvalidDisplayName", func(t *testing.T) {
-		_, err := domain.NewProject("abc", "   ")
+		_, err := domain.NewProject("abc", "   ", domain.RuntimeDockerCompose)
 		require.ErrorIs(t, err, domain.ErrInvalidDisplayName)
 	})
 
 	t.Run("displayName over 100 runes returns ErrInvalidDisplayName", func(t *testing.T) {
 		long := strings.Repeat("あ", 101) // each 'あ' is 1 rune
-		_, err := domain.NewProject("abc", long)
+		_, err := domain.NewProject("abc", long, domain.RuntimeDockerCompose)
 		require.ErrorIs(t, err, domain.ErrInvalidDisplayName)
+	})
+
+	t.Run("valid kubernetes runtime", func(t *testing.T) {
+		p, err := domain.NewProject("k8s-app", "K8s App", domain.RuntimeKubernetes)
+		require.NoError(t, err)
+		assert.Equal(t, domain.RuntimeKubernetes, p.RuntimeType)
+	})
+
+	t.Run("valid docker-compose runtime", func(t *testing.T) {
+		p, err := domain.NewProject("dc-app", "DC App", domain.RuntimeDockerCompose)
+		require.NoError(t, err)
+		assert.Equal(t, domain.RuntimeDockerCompose, p.RuntimeType)
+	})
+
+	t.Run("invalid runtime type returns ErrInvalidRuntimeType", func(t *testing.T) {
+		_, err := domain.NewProject("abc", "Name", domain.RuntimeType("invalid"))
+		require.ErrorIs(t, err, domain.ErrInvalidRuntimeType)
+	})
+
+	t.Run("empty runtime type returns ErrInvalidRuntimeType", func(t *testing.T) {
+		_, err := domain.NewProject("abc", "Name", domain.RuntimeType(""))
+		require.ErrorIs(t, err, domain.ErrInvalidRuntimeType)
 	})
 }
 
@@ -169,7 +191,7 @@ func TestTransitionTo(t *testing.T) {
 		c := c
 		name := string(c.from) + "→" + string(c.to)
 		t.Run(name, func(t *testing.T) {
-			p, err := domain.NewProject("test-slug", "Test")
+			p, err := domain.NewProject("test-slug", "Test", domain.RuntimeDockerCompose)
 			require.NoError(t, err)
 			p.Status = c.from
 			p.PreviousStatus = c.previous
@@ -191,7 +213,7 @@ func TestTransitionTo(t *testing.T) {
 }
 
 func TestTransitionTo_ErrorReEntryPreservePreviousStatus(t *testing.T) {
-	p, err := domain.NewProject("test-slug", "Test")
+	p, err := domain.NewProject("test-slug", "Test", domain.RuntimeDockerCompose)
 	require.NoError(t, err)
 	p.Status = domain.StatusRunning
 
@@ -208,7 +230,7 @@ func TestTransitionTo_ErrorReEntryPreservePreviousStatus(t *testing.T) {
 
 func TestSetError(t *testing.T) {
 	t.Run("transitions to error and records reason", func(t *testing.T) {
-		p, _ := domain.NewProject("abc", "Test")
+		p, _ := domain.NewProject("abc", "Test", domain.RuntimeDockerCompose)
 		p.Status = domain.StatusRunning
 		require.NoError(t, p.SetError("boom"))
 		assert.Equal(t, domain.StatusError, p.Status)
@@ -217,7 +239,7 @@ func TestSetError(t *testing.T) {
 	})
 
 	t.Run("already in error updates only LastError", func(t *testing.T) {
-		p, _ := domain.NewProject("abc", "Test")
+		p, _ := domain.NewProject("abc", "Test", domain.RuntimeDockerCompose)
 		p.Status = domain.StatusError
 		p.PreviousStatus = domain.StatusStarting
 		p.LastError = "first"
@@ -228,7 +250,7 @@ func TestSetError(t *testing.T) {
 	})
 
 	t.Run("cannot enter error from destroyed", func(t *testing.T) {
-		p, _ := domain.NewProject("abc", "Test")
+		p, _ := domain.NewProject("abc", "Test", domain.RuntimeDockerCompose)
 		p.Status = domain.StatusDestroyed
 		err := p.SetError("oops")
 		require.Error(t, err)
@@ -266,7 +288,7 @@ func TestStatusPredicates(t *testing.T) {
 	for _, c := range cases {
 		c := c
 		t.Run(string(c.status)+"/"+string(c.previousStatus), func(t *testing.T) {
-			p, _ := domain.NewProject("abc", "Test")
+			p, _ := domain.NewProject("abc", "Test", domain.RuntimeDockerCompose)
 			p.Status = c.status
 			p.PreviousStatus = c.previousStatus
 			assert.Equal(t, c.canStart, p.CanStart(), "CanStart")
@@ -281,7 +303,7 @@ func TestStatusPredicates(t *testing.T) {
 // ─── TransitionError ─────────────────────────────────────────────────────────
 
 func TestTransitionError_Semantics(t *testing.T) {
-	p, _ := domain.NewProject("abc", "Test")
+	p, _ := domain.NewProject("abc", "Test", domain.RuntimeDockerCompose)
 	p.Status = domain.StatusDestroyed
 	err := p.TransitionTo(domain.StatusRunning)
 	require.Error(t, err)
@@ -352,4 +374,40 @@ func TestAllServices(t *testing.T) {
 func TestTransitionError_IsUnwrap(t *testing.T) {
 	te := &domain.TransitionError{From: domain.StatusStopped, To: domain.StatusRunning}
 	assert.True(t, errors.Is(te, domain.ErrInvalidTransition))
+}
+
+// ─── ValidateRuntimeType ─────────────────────────────────────────────────────
+
+func TestValidateRuntimeType(t *testing.T) {
+	t.Run("docker-compose is valid", func(t *testing.T) {
+		assert.NoError(t, domain.ValidateRuntimeType(domain.RuntimeDockerCompose))
+	})
+	t.Run("kubernetes is valid", func(t *testing.T) {
+		assert.NoError(t, domain.ValidateRuntimeType(domain.RuntimeKubernetes))
+	})
+	t.Run("empty string is invalid", func(t *testing.T) {
+		err := domain.ValidateRuntimeType(domain.RuntimeType(""))
+		assert.ErrorIs(t, err, domain.ErrInvalidRuntimeType)
+	})
+	t.Run("unknown value is invalid", func(t *testing.T) {
+		err := domain.ValidateRuntimeType(domain.RuntimeType("podman"))
+		assert.ErrorIs(t, err, domain.ErrInvalidRuntimeType)
+	})
+}
+
+// ─── K8sNamespace ────────────────────────────────────────────────────────────
+
+func TestK8sNamespace(t *testing.T) {
+	p, err := domain.NewProject("my-app", "My App", domain.RuntimeKubernetes)
+	require.NoError(t, err)
+	assert.Equal(t, "supabase-my-app", p.K8sNamespace())
+}
+
+func TestK8sNamespace_MaxLength(t *testing.T) {
+	slug := strings.Repeat("a", 40) // max slug length
+	p, err := domain.NewProject(slug, "Test", domain.RuntimeKubernetes)
+	require.NoError(t, err)
+	ns := p.K8sNamespace()
+	assert.Equal(t, "supabase-"+slug, ns)
+	assert.LessOrEqual(t, len(ns), 63, "namespace must fit K8s 63-char limit")
 }

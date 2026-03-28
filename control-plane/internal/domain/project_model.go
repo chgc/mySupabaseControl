@@ -43,6 +43,9 @@ type ProjectModel struct {
 	// DisplayName is the human-readable project name (non-empty after trim, max 100 runes).
 	DisplayName string
 
+	// RuntimeType identifies the runtime backend for this project (e.g. docker-compose, kubernetes).
+	RuntimeType RuntimeType
+
 	// Status is the current lifecycle state of the project.
 	Status ProjectStatus
 
@@ -141,10 +144,13 @@ func ValidTransition(from, to ProjectStatus, previousStatus ProjectStatus) bool 
 }
 
 // NewProject creates a new ProjectModel with status creating.
-// Validates slug (including reserved names) and displayName, and sets timestamps.
+// Validates slug (including reserved names), runtimeType, and displayName, and sets timestamps.
 // displayName is trimmed before validation (must be non-empty, max 100 runes).
-func NewProject(slug, displayName string) (*ProjectModel, error) {
+func NewProject(slug, displayName string, runtimeType RuntimeType) (*ProjectModel, error) {
 	if err := ValidateSlug(slug); err != nil {
+		return nil, err
+	}
+	if err := ValidateRuntimeType(runtimeType); err != nil {
 		return nil, err
 	}
 	name := strings.TrimSpace(displayName)
@@ -158,10 +164,17 @@ func NewProject(slug, displayName string) (*ProjectModel, error) {
 	return &ProjectModel{
 		Slug:        slug,
 		DisplayName: name,
+		RuntimeType: runtimeType,
 		Status:      StatusCreating,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}, nil
+}
+
+// K8sNamespace returns the Kubernetes namespace for this project.
+// Only meaningful when RuntimeType == RuntimeKubernetes.
+func (p *ProjectModel) K8sNamespace() string {
+	return "supabase-" + p.Slug
 }
 
 // TransitionTo attempts to transition the project to the target state.

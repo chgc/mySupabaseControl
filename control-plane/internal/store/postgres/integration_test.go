@@ -81,7 +81,7 @@ func TestIntegration_ProjectRepository_CreateAndGetBySlug(t *testing.T) {
 	repo := postgres.NewProjectRepository(pool)
 	ctx := context.Background()
 
-	project, err := domain.NewProject(slug, "Integration Test Project")
+	project, err := domain.NewProject(slug, "Integration Test Project", domain.RuntimeDockerCompose)
 	require.NoError(t, err)
 
 	require.NoError(t, repo.Create(ctx, project))
@@ -104,10 +104,10 @@ func TestIntegration_ProjectRepository_Create_DuplicateSlug(t *testing.T) {
 	repo := postgres.NewProjectRepository(pool)
 	ctx := context.Background()
 
-	p, _ := domain.NewProject(slug, "First")
+	p, _ := domain.NewProject(slug, "First", domain.RuntimeDockerCompose)
 	require.NoError(t, repo.Create(ctx, p))
 
-	p2, _ := domain.NewProject(slug, "Second")
+	p2, _ := domain.NewProject(slug, "Second", domain.RuntimeDockerCompose)
 	err := repo.Create(ctx, p2)
 	assert.ErrorIs(t, err, store.ErrProjectAlreadyExists)
 }
@@ -128,7 +128,7 @@ func TestIntegration_ProjectRepository_List(t *testing.T) {
 	repo := postgres.NewProjectRepository(pool)
 	ctx := context.Background()
 
-	p, _ := domain.NewProject(slug, "List Test")
+	p, _ := domain.NewProject(slug, "List Test", domain.RuntimeDockerCompose)
 	require.NoError(t, repo.Create(ctx, p))
 
 	projects, err := repo.List(ctx)
@@ -154,7 +154,7 @@ func TestIntegration_ProjectRepository_UpdateStatus(t *testing.T) {
 	repo := postgres.NewProjectRepository(pool)
 	ctx := context.Background()
 
-	p, _ := domain.NewProject(slug, "Status Test")
+	p, _ := domain.NewProject(slug, "Status Test", domain.RuntimeDockerCompose)
 	require.NoError(t, repo.Create(ctx, p))
 
 	require.NoError(t, repo.UpdateStatus(ctx, slug, domain.StatusStopped, domain.StatusCreating, ""))
@@ -182,7 +182,7 @@ func TestIntegration_ProjectRepository_Delete(t *testing.T) {
 	repo := postgres.NewProjectRepository(pool)
 	ctx := context.Background()
 
-	p, _ := domain.NewProject(slug, "Delete Test")
+	p, _ := domain.NewProject(slug, "Delete Test", domain.RuntimeDockerCompose)
 	require.NoError(t, repo.Create(ctx, p))
 	require.NoError(t, repo.Delete(ctx, slug))
 
@@ -204,7 +204,7 @@ func TestIntegration_ProjectRepository_Exists(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exists)
 
-	p, _ := domain.NewProject(slug, "Exists Test")
+	p, _ := domain.NewProject(slug, "Exists Test", domain.RuntimeDockerCompose)
 	require.NoError(t, repo.Create(ctx, p))
 
 	exists, err = repo.Exists(ctx, slug)
@@ -225,7 +225,7 @@ func TestIntegration_ConfigRepository_SaveAndGetConfig(t *testing.T) {
 	ctx := context.Background()
 
 	// Create the project first (FK constraint).
-	p, _ := domain.NewProject(slug, "Config Test")
+	p, _ := domain.NewProject(slug, "Config Test", domain.RuntimeDockerCompose)
 	require.NoError(t, projRepo.Create(ctx, p))
 
 	portSet := &domain.PortSet{
@@ -261,7 +261,7 @@ func TestIntegration_ConfigRepository_SaveAndGetOverrides(t *testing.T) {
 	cfgRepo := postgres.NewConfigRepository(pool)
 	ctx := context.Background()
 
-	p, _ := domain.NewProject(slug, "Overrides Test")
+	p, _ := domain.NewProject(slug, "Overrides Test", domain.RuntimeDockerCompose)
 	require.NoError(t, projRepo.Create(ctx, p))
 
 	overrides := map[string]string{
@@ -285,7 +285,7 @@ func TestIntegration_ConfigRepository_SaveOverrides_EmptyClears(t *testing.T) {
 	cfgRepo := postgres.NewConfigRepository(pool)
 	ctx := context.Background()
 
-	p, _ := domain.NewProject(slug, "Overrides Clear")
+	p, _ := domain.NewProject(slug, "Overrides Clear", domain.RuntimeDockerCompose)
 	require.NoError(t, projRepo.Create(ctx, p))
 
 	require.NoError(t, cfgRepo.SaveOverrides(ctx, slug, map[string]string{"DISABLE_SIGNUP": "true"}))

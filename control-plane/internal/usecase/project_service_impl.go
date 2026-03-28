@@ -101,7 +101,7 @@ func (s *projectService) Create(ctx context.Context, slug, displayName string) (
 		return nil, &UsecaseError{Code: ErrCodeInvalidInput, Message: err.Error(), Err: err}
 	}
 
-	project, err := domain.NewProject(slug, displayName)
+	project, err := domain.NewProject(slug, displayName, domain.RuntimeDockerCompose)
 	if err != nil {
 		return nil, &UsecaseError{Code: ErrCodeInvalidInput, Message: err.Error(), Err: err}
 	}

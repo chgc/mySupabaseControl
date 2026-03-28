@@ -41,7 +41,7 @@ func testPortSet() *domain.PortSet {
 // helper builds a minimal project for use in tests.
 func testProject(t *testing.T) *domain.ProjectModel {
 	t.Helper()
-	p, err := domain.NewProject("test-slug", "Test Project")
+	p, err := domain.NewProject("test-slug", "Test Project", domain.RuntimeDockerCompose)
 	require.NoError(t, err)
 	return p
 }

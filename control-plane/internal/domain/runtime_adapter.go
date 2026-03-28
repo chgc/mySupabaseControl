@@ -98,9 +98,10 @@ func (e *StartError) Unwrap() error {
 
 // Sentinel errors for RuntimeAdapter operations.
 var (
-	ErrAdapterTimeout    = errors.New("adapter operation timed out")
-	ErrServiceNotHealthy = errors.New("one or more services failed health check")
-	ErrRuntimeNotFound   = errors.New("runtime not available")
+	ErrAdapterTimeout      = errors.New("adapter operation timed out")
+	ErrServiceNotHealthy   = errors.New("one or more services failed health check")
+	ErrRuntimeNotFound     = errors.New("runtime not available")
+	ErrInvalidRuntimeType  = errors.New("invalid runtime type")
 )
 
 // RuntimeType identifies the supported runtime backends.
@@ -111,6 +112,16 @@ const (
 	RuntimeDockerCompose RuntimeType = "docker-compose"
 	RuntimeKubernetes    RuntimeType = "kubernetes"
 )
+
+// ValidateRuntimeType checks that the given RuntimeType is a known value.
+func ValidateRuntimeType(rt RuntimeType) error {
+	switch rt {
+	case RuntimeDockerCompose, RuntimeKubernetes:
+		return nil
+	default:
+		return fmt.Errorf("%w: %s", ErrInvalidRuntimeType, rt)
+	}
+}
 
 // adapterOptions holds the configuration for constructing a RuntimeAdapter.
 type adapterOptions struct {
