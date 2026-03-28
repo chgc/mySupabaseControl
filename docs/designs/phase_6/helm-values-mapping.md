@@ -7,7 +7,7 @@
 
 ## 狀態
 
-code_review
+done
 
 ## Phase
 
@@ -546,6 +546,13 @@ func setNestedValue(m map[string]any, path string, value any)
 
 ## 程式碼審查
 
-- **審查結果：**
+- **審查結果：** FIX_REQUIRED → PASS
 - **發現問題：**
+  1. NodePort 設定使用 silent error swallowing（`if err == nil`），與 Transform 的 error handling 模式不一致
+  2. 缺少 `service.db.nodePort` 的測試斷言
+  3. gofmt 格式化不符合 CODING_GUIDELINES
 - **修正記錄：**
+  1. 改為透過 `getNestedInt` 從已驗證的 `service.*.port` 複製值，消除重複轉換與 silent error
+  2. 新增 `service.db.nodePort` 測試斷言
+  3. 執行 `gofmt -w` 修正格式
+  - commit: `fix(cp/k8s): address code review — nodePort error handling and gofmt`
