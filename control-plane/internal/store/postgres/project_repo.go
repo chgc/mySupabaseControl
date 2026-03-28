@@ -43,12 +43,13 @@ func NewProjectRepository(pool *pgxpool.Pool) *ProjectRepository {
 // Returns store.ErrProjectAlreadyExists if an active (non-destroyed) row exists.
 func (r *ProjectRepository) Create(ctx context.Context, project *domain.ProjectModel) error {
 	const insertQ = `
-		INSERT INTO projects (slug, display_name, status, previous_status, last_error, created_at, updated_at)
-		VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7)`
+		INSERT INTO projects (slug, display_name, runtime_type, status, previous_status, last_error, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), $7, $8)`
 
 	_, err := r.db.Exec(ctx, insertQ,
 		project.Slug,
 		project.DisplayName,
+		string(project.RuntimeType),
 		string(project.Status),
 		string(project.PreviousStatus),
 		project.LastError,
@@ -94,6 +95,7 @@ func (r *ProjectRepository) Create(ctx context.Context, project *domain.ProjectM
 	if _, txErr = tx.Exec(ctx, insertQ,
 		project.Slug,
 		project.DisplayName,
+		string(project.RuntimeType),
 		string(project.Status),
 		string(project.PreviousStatus),
 		project.LastError,
@@ -109,7 +111,7 @@ func (r *ProjectRepository) Create(ctx context.Context, project *domain.ProjectM
 // Returns store.ErrProjectNotFound when no row matches.
 func (r *ProjectRepository) GetBySlug(ctx context.Context, slug string) (*domain.ProjectModel, error) {
 	const q = `
-		SELECT slug, display_name, status,
+		SELECT slug, display_name, runtime_type, status,
 		       COALESCE(previous_status, '') AS previous_status,
 		       COALESCE(last_error, '')      AS last_error,
 		       created_at, updated_at
@@ -118,10 +120,11 @@ func (r *ProjectRepository) GetBySlug(ctx context.Context, slug string) (*domain
 
 	row := r.db.QueryRow(ctx, q, slug)
 	p := &domain.ProjectModel{}
-	var status, previousStatus string
+	var status, previousStatus, runtimeType string
 	err := row.Scan(
 		&p.Slug,
 		&p.DisplayName,
+		&runtimeType,
 		&status,
 		&previousStatus,
 		&p.LastError,
@@ -134,6 +137,7 @@ func (r *ProjectRepository) GetBySlug(ctx context.Context, slug string) (*domain
 		}
 		return nil, fmt.Errorf("%w: GetBySlug: %w", store.ErrStoreInternal, err)
 	}
+	p.RuntimeType = domain.RuntimeType(runtimeType)
 	p.Status = domain.ProjectStatus(status)
 	p.PreviousStatus = domain.ProjectStatus(previousStatus)
 	// Health is runtime-only and is not persisted; callers must populate it
@@ -155,7 +159,7 @@ func (r *ProjectRepository) List(ctx context.Context, filters ...store.ListFilte
 	var args []any
 	if opts.Status != nil {
 		q = `
-			SELECT slug, display_name, status,
+			SELECT slug, display_name, runtime_type, status,
 			       COALESCE(previous_status, '') AS previous_status,
 			       COALESCE(last_error, '')      AS last_error,
 			       created_at, updated_at
@@ -165,7 +169,7 @@ func (r *ProjectRepository) List(ctx context.Context, filters ...store.ListFilte
 		args = []any{string(*opts.Status)}
 	} else {
 		q = `
-			SELECT slug, display_name, status,
+			SELECT slug, display_name, runtime_type, status,
 			       COALESCE(previous_status, '') AS previous_status,
 			       COALESCE(last_error, '')      AS last_error,
 			       created_at, updated_at
@@ -183,13 +187,14 @@ func (r *ProjectRepository) List(ctx context.Context, filters ...store.ListFilte
 	var projects []*domain.ProjectModel
 	for rows.Next() {
 		p := &domain.ProjectModel{}
-		var status, previousStatus string
+		var status, previousStatus, runtimeType string
 		if err := rows.Scan(
-			&p.Slug, &p.DisplayName, &status, &previousStatus,
+			&p.Slug, &p.DisplayName, &runtimeType, &status, &previousStatus,
 			&p.LastError, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("%w: List scan: %w", store.ErrStoreInternal, err)
 		}
+		p.RuntimeType = domain.RuntimeType(runtimeType)
 		p.Status = domain.ProjectStatus(status)
 		p.PreviousStatus = domain.ProjectStatus(previousStatus)
 		projects = append(projects, p)
