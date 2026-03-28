@@ -45,6 +45,12 @@ func NewAdapterRegistry(configs ...AdapterRegistryConfig) (AdapterRegistry, erro
 		allocators: make(map[RuntimeType]PortAllocator, len(configs)),
 	}
 	for _, c := range configs {
+		if c.Adapter == nil {
+			return nil, fmt.Errorf("adapter for runtime %s must not be nil", c.RuntimeType)
+		}
+		if c.PortAllocator == nil {
+			return nil, fmt.Errorf("port allocator for runtime %s must not be nil", c.RuntimeType)
+		}
 		reg.adapters[c.RuntimeType] = c.Adapter
 		reg.allocators[c.RuntimeType] = c.PortAllocator
 	}

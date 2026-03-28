@@ -41,6 +41,26 @@ func TestNewAdapterRegistry(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "at least one adapter configuration")
 	})
+
+	t.Run("returns error with nil adapter", func(t *testing.T) {
+		_, err := domain.NewAdapterRegistry(domain.AdapterRegistryConfig{
+			RuntimeType:   domain.RuntimeDockerCompose,
+			Adapter:       nil,
+			PortAllocator: &domain.MockPortAllocator{},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must not be nil")
+	})
+
+	t.Run("returns error with nil port allocator", func(t *testing.T) {
+		_, err := domain.NewAdapterRegistry(domain.AdapterRegistryConfig{
+			RuntimeType:   domain.RuntimeDockerCompose,
+			Adapter:       &domain.MockRuntimeAdapter{},
+			PortAllocator: nil,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must not be nil")
+	})
 }
 
 func TestAdapterRegistry_GetAdapter(t *testing.T) {

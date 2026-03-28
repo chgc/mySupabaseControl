@@ -138,6 +138,9 @@ func (r *ProjectRepository) GetBySlug(ctx context.Context, slug string) (*domain
 		return nil, fmt.Errorf("%w: GetBySlug: %w", store.ErrStoreInternal, err)
 	}
 	p.RuntimeType = domain.RuntimeType(runtimeType)
+	if err := domain.ValidateRuntimeType(p.RuntimeType); err != nil {
+		return nil, fmt.Errorf("%w: GetBySlug: invalid runtime_type %q in database", store.ErrStoreInternal, runtimeType)
+	}
 	p.Status = domain.ProjectStatus(status)
 	p.PreviousStatus = domain.ProjectStatus(previousStatus)
 	// Health is runtime-only and is not persisted; callers must populate it
@@ -195,6 +198,9 @@ func (r *ProjectRepository) List(ctx context.Context, filters ...store.ListFilte
 			return nil, fmt.Errorf("%w: List scan: %w", store.ErrStoreInternal, err)
 		}
 		p.RuntimeType = domain.RuntimeType(runtimeType)
+		if err := domain.ValidateRuntimeType(p.RuntimeType); err != nil {
+			return nil, fmt.Errorf("%w: List: invalid runtime_type %q in database for slug %q", store.ErrStoreInternal, runtimeType, p.Slug)
+		}
 		p.Status = domain.ProjectStatus(status)
 		p.PreviousStatus = domain.ProjectStatus(previousStatus)
 		projects = append(projects, p)
