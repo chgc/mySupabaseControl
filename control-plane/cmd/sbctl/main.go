@@ -56,7 +56,9 @@ func buildRootCmd() *cobra.Command {
 		dbURL       string
 		projectsDir string
 		output      string
+		noColor     bool
 		deps        *Deps
+		colorOut    *colorer
 	)
 
 	root := &cobra.Command{
@@ -78,6 +80,7 @@ func buildRootCmd() *cobra.Command {
 		"Root directory for project files (env: SBCTL_PROJECTS_DIR)")
 	root.PersistentFlags().StringVarP(&output, "output", "o", "table",
 		"Output format: table|json|yaml")
+	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 
 	// PersistentPreRunE runs before every subcommand except --help/--version.
 	// It validates flags and initialises the dependency graph via BuildDeps.
@@ -92,6 +95,8 @@ func buildRootCmd() *cobra.Command {
 		if cmd.Name() == cobra.ShellCompRequestCmd || cmd.Name() == cobra.ShellCompNoDescRequestCmd || isCompletionCmd(cmd) {
 			return nil
 		}
+
+		colorOut = newColorer(os.Stdout.Fd(), noColor)
 
 		if err := validateOutput(output); err != nil {
 			fmt.Fprintln(cmd.ErrOrStderr(), "Error:", err)
@@ -111,9 +116,13 @@ func buildRootCmd() *cobra.Command {
 		return nil
 	}
 
-	root.AddCommand(buildProjectCmd(&deps, &output))
+	root.AddCommand(buildProjectCmd(&deps, &output, &colorOut))
 	root.AddCommand(buildMCPCmd())
 	root.AddCommand(buildCompletionCmd())
+
+	root.RegisterFlagCompletionFunc("output", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"table", "json", "yaml"}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	root.SetFlagErrorFunc(flagErrorWithSuggestions)
 

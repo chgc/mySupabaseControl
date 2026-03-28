@@ -104,13 +104,14 @@ func stubView(slug, displayName string) *usecase.ProjectView {
 func newTestRootCmd(svc usecase.ProjectService) *cobra.Command {
 	deps := &Deps{ProjectService: svc}
 	output := "table"
+	var colorOut *colorer // nil — disabled in tests (safe: c.status returns raw string)
 
 	root := &cobra.Command{Use: "sbctl"}
 	root.SilenceErrors = true
 	root.SilenceUsage = true
 	root.PersistentPreRunE = func(_ *cobra.Command, _ []string) error { return nil }
 	root.PersistentFlags().StringVarP(&output, "output", "o", "table", "")
-	root.AddCommand(buildProjectCmd(&deps, &output))
+	root.AddCommand(buildProjectCmd(&deps, &output, &colorOut))
 	return root
 }
 

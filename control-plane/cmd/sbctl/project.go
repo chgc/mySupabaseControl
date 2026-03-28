@@ -15,7 +15,7 @@ import (
 // buildProjectCmd builds the "project" command group and all its subcommands.
 // deps is a double pointer: *deps is nil at construction time and becomes valid
 // after PersistentPreRunE runs. output likewise points to the global flag value.
-func buildProjectCmd(deps **Deps, output *string) *cobra.Command {
+func buildProjectCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
 		Short: "Manage Supabase projects",
@@ -23,19 +23,19 @@ func buildProjectCmd(deps **Deps, output *string) *cobra.Command {
 	// ⚠️ Do NOT define PersistentPreRunE here — it would shadow the root
 	// command's PersistentPreRunE and prevent BuildDeps from running.
 	cmd.AddCommand(
-		buildCreateCmd(deps, output),
-		buildListCmd(deps, output),
-		buildGetCmd(deps, output),
-		buildStartCmd(deps, output),
-		buildStopCmd(deps, output),
-		buildResetCmd(deps, output),
+		buildCreateCmd(deps, output, colorOut),
+		buildListCmd(deps, output, colorOut),
+		buildGetCmd(deps, output, colorOut),
+		buildStartCmd(deps, output, colorOut),
+		buildStopCmd(deps, output, colorOut),
+		buildResetCmd(deps, output, colorOut),
 		buildDeleteCmd(deps, output),
 		buildCredentialsCmd(deps, output),
 	)
 	return cmd
 }
 
-func buildCreateCmd(deps **Deps, output *string) *cobra.Command {
+func buildCreateCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
 	var displayName string
 	var runtimeFlag string
 	cmd := &cobra.Command{
@@ -51,17 +51,23 @@ func buildCreateCmd(deps **Deps, output *string) *cobra.Command {
 			if err != nil {
 				return projectErr(cmd, err)
 			}
-			return writeProjectView(cmd.OutOrStdout(), *output, view)
+			return writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut)
 		},
 	}
 	cmd.Flags().StringVarP(&displayName, "display-name", "n", "", "Human-readable project name (required)")
 	_ = cmd.MarkFlagRequired("display-name")
 	cmd.Flags().StringVarP(&runtimeFlag, "runtime", "r", string(domain.RuntimeDockerCompose),
 		"Runtime type: docker-compose or kubernetes")
+	cmd.RegisterFlagCompletionFunc("runtime", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			string(domain.RuntimeDockerCompose) + "\tDocker Compose runtime",
+			string(domain.RuntimeKubernetes) + "\tKubernetes runtime",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
 	return cmd
 }
 
-func buildListCmd(deps **Deps, output *string) *cobra.Command {
+func buildListCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List all active Supabase projects",
@@ -71,13 +77,13 @@ func buildListCmd(deps **Deps, output *string) *cobra.Command {
 			if err != nil {
 				return projectErr(cmd, err)
 			}
-			return writeProjectViews(cmd.OutOrStdout(), *output, views)
+			return writeProjectViews(cmd.OutOrStdout(), *output, views, *colorOut)
 		},
 	}
 }
 
-func buildGetCmd(deps **Deps, output *string) *cobra.Command {
-	return &cobra.Command{
+func buildGetCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "get <slug>",
 		Short: "Get details of a Supabase project",
 		Args:  cobra.ExactArgs(1),
@@ -86,13 +92,15 @@ func buildGetCmd(deps **Deps, output *string) *cobra.Command {
 			if err != nil {
 				return projectErr(cmd, err)
 			}
-			return writeProjectView(cmd.OutOrStdout(), *output, view)
+			return writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut)
 		},
 	}
+	cmd.ValidArgsFunction = projectSlugCompletion(deps)
+	return cmd
 }
 
-func buildStartCmd(deps **Deps, output *string) *cobra.Command {
-	return &cobra.Command{
+func buildStartCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "start <slug>",
 		Short: "Start a stopped Supabase project",
 		Args:  cobra.ExactArgs(1),
@@ -101,13 +109,15 @@ func buildStartCmd(deps **Deps, output *string) *cobra.Command {
 			if err != nil {
 				return projectErr(cmd, err)
 			}
-			return writeProjectView(cmd.OutOrStdout(), *output, view)
+			return writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut)
 		},
 	}
+	cmd.ValidArgsFunction = projectSlugCompletion(deps)
+	return cmd
 }
 
-func buildStopCmd(deps **Deps, output *string) *cobra.Command {
-	return &cobra.Command{
+func buildStopCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "stop <slug>",
 		Short: "Stop a running Supabase project",
 		Args:  cobra.ExactArgs(1),
@@ -116,13 +126,15 @@ func buildStopCmd(deps **Deps, output *string) *cobra.Command {
 			if err != nil {
 				return projectErr(cmd, err)
 			}
-			return writeProjectView(cmd.OutOrStdout(), *output, view)
+			return writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut)
 		},
 	}
+	cmd.ValidArgsFunction = projectSlugCompletion(deps)
+	return cmd
 }
 
-func buildResetCmd(deps **Deps, output *string) *cobra.Command {
-	return &cobra.Command{
+func buildResetCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "reset <slug>",
 		Short: "Reset a Supabase project (wipe data and re-provision)",
 		Args:  cobra.ExactArgs(1),
@@ -131,9 +143,11 @@ func buildResetCmd(deps **Deps, output *string) *cobra.Command {
 			if err != nil {
 				return projectErr(cmd, err)
 			}
-			return writeProjectView(cmd.OutOrStdout(), *output, view)
+			return writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut)
 		},
 	}
+	cmd.ValidArgsFunction = projectSlugCompletion(deps)
+	return cmd
 }
 
 func buildDeleteCmd(deps **Deps, output *string) *cobra.Command {
@@ -165,6 +179,7 @@ func buildDeleteCmd(deps **Deps, output *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
+	cmd.ValidArgsFunction = projectSlugCompletion(deps)
 	return cmd
 }
 
@@ -186,7 +201,7 @@ func projectErr(cmd *cobra.Command, err error) error {
 }
 
 func buildCredentialsCmd(deps **Deps, output *string) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "credentials <slug>",
 		Short: "Show admin credentials for a project (unmasked)",
 		Args:  cobra.ExactArgs(1),
@@ -199,4 +214,6 @@ func buildCredentialsCmd(deps **Deps, output *string) *cobra.Command {
 			return writeCredentialsView(cmd.OutOrStdout(), *output, cv)
 		},
 	}
+	cmd.ValidArgsFunction = projectSlugCompletion(deps)
+	return cmd
 }

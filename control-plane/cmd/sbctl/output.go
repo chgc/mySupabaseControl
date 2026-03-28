@@ -12,7 +12,7 @@ import (
 	"github.com/kevin/supabase-control-plane/internal/usecase"
 )
 
-func writeProjectView(w io.Writer, output string, view *usecase.ProjectView) error {
+func writeProjectView(w io.Writer, output string, view *usecase.ProjectView, c *colorer) error {
 	switch output {
 	case "json":
 		enc := json.NewEncoder(w)
@@ -24,13 +24,13 @@ func writeProjectView(w io.Writer, output string, view *usecase.ProjectView) err
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "SLUG\tDISPLAY NAME\tSTATUS\tUPDATED")
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			view.Slug, view.DisplayName, string(view.Status),
+			view.Slug, view.DisplayName, c.status(string(view.Status)),
 			view.UpdatedAt.UTC().Format(time.RFC3339))
 		return tw.Flush()
 	}
 }
 
-func writeProjectViews(w io.Writer, output string, views []*usecase.ProjectView) error {
+func writeProjectViews(w io.Writer, output string, views []*usecase.ProjectView, c *colorer) error {
 	switch output {
 	case "json":
 		enc := json.NewEncoder(w)
@@ -49,7 +49,7 @@ func writeProjectViews(w io.Writer, output string, views []*usecase.ProjectView)
 		fmt.Fprintln(tw, "SLUG\tDISPLAY NAME\tSTATUS\tUPDATED")
 		for _, v := range views {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-				v.Slug, v.DisplayName, string(v.Status),
+				v.Slug, v.DisplayName, c.status(string(v.Status)),
 				v.UpdatedAt.UTC().Format(time.RFC3339))
 		}
 		return tw.Flush()
