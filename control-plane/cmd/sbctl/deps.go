@@ -41,9 +41,9 @@ func BuildDeps(ctx context.Context, dbURL, projectsDir string) (*Deps, error) {
 
 	k8sRenderer := k8sadapter.NewK8sValuesRenderer()
 	k8sAdapter := k8sadapter.NewK8sAdapter(
-		"supabase-community/supabase",
+		"supabase/supabase",
 		"0.5.2",
-		"https://supabase-community.github.io/helm-charts",
+		"https://supabase-community.github.io/supabase-kubernetes",
 		projectsDir,
 		k8sRenderer,
 	)

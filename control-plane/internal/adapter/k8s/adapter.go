@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/kevin/supabase-control-plane/internal/domain"
 )
 
@@ -94,6 +96,10 @@ func (a *K8sAdapter) Start(ctx context.Context, project *domain.ProjectModel) er
 
 	if _, err := a.runner.Run(ctx, "", "helm", "upgrade", "--install", rel, a.chartRef,
 		"-n", ns, "--version", a.chartVersion, "-f", a.valuesPath(project.Slug)); err != nil {
+		return &domain.StartError{Slug: project.Slug, Err: err}
+	}
+
+	if err := a.patchNodePorts(ctx, project.Slug, ns); err != nil {
 		return &domain.StartError{Slug: project.Slug, Err: err}
 	}
 
@@ -217,8 +223,47 @@ func (a *K8sAdapter) ApplyConfig(ctx context.Context, project *domain.ProjectMod
 	return nil
 }
 
-// ensureHelmRepo checks whether the Helm repo for chartRef is already configured.
-// If the repoURL is empty the check is skipped (useful in tests or custom setups).
+// patchNodePorts reads the project values.yaml and patches the Kong and DB
+// services to use the configured nodePort values. The Helm chart does not
+// expose nodePort in its values schema, so Kubernetes would otherwise assign
+// random ports — making the allocated ports unreachable.
+func (a *K8sAdapter) patchNodePorts(ctx context.Context, slug, ns string) error {
+	raw, err := os.ReadFile(a.valuesPath(slug))
+	if err != nil {
+		return fmt.Errorf("read values: %w", err)
+	}
+
+	var vals map[string]any
+	if err := yaml.Unmarshal(raw, &vals); err != nil {
+		return fmt.Errorf("parse values: %w", err)
+	}
+
+	type svcPatch struct {
+		svcName  string
+		valueKey string // dot path into vals
+	}
+
+	patches := []svcPatch{
+		{svcName: "supabase-" + slug + "-supabase-kong", valueKey: "service.kong.nodePort"},
+		{svcName: "supabase-" + slug + "-supabase-db", valueKey: "service.db.nodePort"},
+	}
+
+	for _, p := range patches {
+		port := getNestedInt(vals, p.valueKey)
+		if port == 0 {
+			continue
+		}
+		patch := fmt.Sprintf(`[{"op":"replace","path":"/spec/ports/0/nodePort","value":%d}]`, port)
+		if _, err := a.runner.Run(ctx, "", "kubectl", "patch", "svc", p.svcName,
+			"-n", ns, "--type=json", "-p", patch); err != nil {
+			return fmt.Errorf("patch nodePort for %s: %w", p.svcName, err)
+		}
+	}
+
+	return nil
+}
+
+// ensureHelmRepo checks whether the Helm repo for chartRef is already configured.// If the repoURL is empty the check is skipped (useful in tests or custom setups).
 // If the repo is missing it is added and the index is updated.
 func (a *K8sAdapter) ensureHelmRepo(ctx context.Context) error {
 	if a.repoURL == "" {
@@ -234,10 +279,13 @@ func (a *K8sAdapter) ensureHelmRepo(ctx context.Context) error {
 
 	// `helm repo list` exits 1 with "no repositories configured" when the list is
 	// empty, so we treat any non-zero exit as "repo not present" only when the
-	// output does not contain the repo name.
+	// output does not contain the repo name as a column value (not just a URL substring).
 	out, _ := a.runner.Run(ctx, "", "helm", "repo", "list")
-	if strings.Contains(string(out), repoName) {
-		return nil // already configured
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 1 && fields[0] == repoName {
+			return nil // already configured by name
+		}
 	}
 
 	// Add the repo.
@@ -252,3 +300,4 @@ func (a *K8sAdapter) ensureHelmRepo(ctx context.Context) error {
 
 	return nil
 }
+

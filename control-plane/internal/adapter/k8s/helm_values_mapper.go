@@ -130,6 +130,18 @@ func toInt(value string) (any, error) {
 	return v, nil
 }
 
+// orDefault returns a Transform that substitutes `def` when the config value is empty.
+// The Helm chart omits secret keys with empty values, which causes pods to fail with
+// CreateContainerConfigError when the secretKeyRef is still present in the deployment.
+func orDefault(def string) func(string) (any, error) {
+	return func(value string) (any, error) {
+		if value == "" {
+			return def, nil
+		}
+		return value, nil
+	}
+}
+
 // getNestedInt retrieves an int value from a nested map using a dot-separated path.
 // Returns 0 if the path doesn't exist or the value is not an int.
 func getNestedInt(m map[string]any, path string) int {
@@ -272,7 +284,7 @@ func defaultMappings() []HelmMapping {
 		{ConfigKey: "IMGPROXY_AUTO_WEBP", ValuesPath: ""},          // chart uses IMGPROXY_ENABLE_WEBP_DETECTION
 		{ConfigKey: "IMGPROXY_MAX_SRC_RESOLUTION", ValuesPath: ""}, // chart doesn't use this key
 		{ConfigKey: "GLOBAL_S3_BUCKET", ValuesPath: "environment.storage.GLOBAL_S3_BUCKET"},
-		{ConfigKey: "OPENAI_API_KEY", ValuesPath: "secret.dashboard.openAiApiKey"},
+		{ConfigKey: "OPENAI_API_KEY", ValuesPath: "secret.dashboard.openAiApiKey", Transform: orDefault("not-configured")},
 		{ConfigKey: "POOLER_DEFAULT_POOL_SIZE", ValuesPath: ""}, // supavisor only
 		{ConfigKey: "POOLER_MAX_CLIENT_CONN", ValuesPath: ""},   // supavisor only
 		{ConfigKey: "POOLER_DB_POOL_SIZE", ValuesPath: ""},      // supavisor only

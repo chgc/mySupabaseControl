@@ -138,6 +138,41 @@ func TestToInt(t *testing.T) {
 	}
 }
 
+func TestOrDefault(t *testing.T) {
+	transform := orDefault("not-configured")
+
+	got, err := transform("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "not-configured" {
+		t.Errorf("empty string: got %v, want not-configured", got)
+	}
+
+	got, err = transform("sk-real-key")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "sk-real-key" {
+		t.Errorf("non-empty string: got %v, want sk-real-key", got)
+	}
+}
+
+// TestMapValues_OpenAIKeyEmpty verifies that an empty OPENAI_API_KEY is stored
+// as "not-configured" so the Helm chart includes the key in the secret.
+func TestMapValues_OpenAIKeyEmpty(t *testing.T) {
+	config := newTestConfig(map[string]string{"OPENAI_API_KEY": ""})
+	mapper := NewHelmValuesMapper()
+	result, err := mapper.MapValues(config)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := getNestedValue(result, "secret.dashboard.openAiApiKey"); got != "not-configured" {
+		t.Errorf("got %v, want not-configured", got)
+	}
+}
+
+
 func TestNewHelmValuesMapper(t *testing.T) {
 	mapper := NewHelmValuesMapper()
 	mappings := mapper.Mappings()
