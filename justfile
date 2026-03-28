@@ -43,7 +43,7 @@ cp-setup *args:
 
 # Build the control plane server.
 cp-build:
-  cd control-plane && go build ./...
+  cd control-plane && go build -o ../sbctl ./cmd/sbctl
 
 # Run all control plane unit tests (no DB required).
 cp-test:
