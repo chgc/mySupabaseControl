@@ -32,6 +32,7 @@ const (
 	intTestSlug     = "k8s-e2e-test"
 	intChartRef     = "supabase-community/supabase"
 	intChartVersion = "0.5.2"
+	intRepoURL      = "https://supabase-community.github.io/helm-charts"
 )
 
 // checkPrereqs skips the test if kubectl or helm are not available or if the
@@ -80,7 +81,7 @@ func TestIntegration_K8sAdapter_FullLifecycle(t *testing.T) {
 
 	dataDir := t.TempDir()
 	renderer := k8s.NewK8sValuesRenderer()
-	adapter := k8s.NewK8sAdapter(intChartRef, intChartVersion, dataDir, renderer)
+	adapter := k8s.NewK8sAdapter(intChartRef, intChartVersion, intRepoURL, dataDir, renderer)
 
 	project, err := domain.NewProject(intTestSlug, "K8s E2E Test Project", domain.RuntimeKubernetes)
 	require.NoError(t, err)
@@ -137,7 +138,7 @@ func TestIntegration_K8sAdapter_CreateIdempotent(t *testing.T) {
 
 	dataDir := t.TempDir()
 	renderer := k8s.NewK8sValuesRenderer()
-	adapter := k8s.NewK8sAdapter(intChartRef, intChartVersion, dataDir, renderer)
+	adapter := k8s.NewK8sAdapter(intChartRef, intChartVersion, intRepoURL, dataDir, renderer)
 
 	project, err := domain.NewProject("k8s-idem-test", "K8s Idempotent Test", domain.RuntimeKubernetes)
 	require.NoError(t, err)

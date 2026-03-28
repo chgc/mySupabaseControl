@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/kevin/supabase-control-plane/internal/adapter/compose"
+	k8sadapter "github.com/kevin/supabase-control-plane/internal/adapter/k8s"
 	"github.com/kevin/supabase-control-plane/internal/domain"
 	storepostgres "github.com/kevin/supabase-control-plane/internal/store/postgres"
 	"github.com/kevin/supabase-control-plane/internal/usecase"
@@ -38,11 +39,28 @@ func BuildDeps(ctx context.Context, dbURL, projectsDir string) (*Deps, error) {
 	allocator := compose.NewComposePortAllocator(projectRepo, configRepo)
 	secretGen := domain.NewSecretGenerator()
 
-	registry, regErr := domain.NewAdapterRegistry(domain.AdapterRegistryConfig{
-		RuntimeType:   domain.RuntimeDockerCompose,
-		Adapter:       adapter,
-		PortAllocator: allocator,
-	})
+	k8sRenderer := k8sadapter.NewK8sValuesRenderer()
+	k8sAdapter := k8sadapter.NewK8sAdapter(
+		"supabase-community/supabase",
+		"0.5.2",
+		"https://supabase-community.github.io/helm-charts",
+		projectsDir,
+		k8sRenderer,
+	)
+	k8sAllocator := k8sadapter.NewK8sPortAllocator(projectRepo, configRepo)
+
+	registry, regErr := domain.NewAdapterRegistry(
+		domain.AdapterRegistryConfig{
+			RuntimeType:   domain.RuntimeDockerCompose,
+			Adapter:       adapter,
+			PortAllocator: allocator,
+		},
+		domain.AdapterRegistryConfig{
+			RuntimeType:   domain.RuntimeKubernetes,
+			Adapter:       k8sAdapter,
+			PortAllocator: k8sAllocator,
+		},
+	)
 	if regErr != nil {
 		pool.Close()
 		return nil, fmt.Errorf("initialise adapter registry: %w", regErr)

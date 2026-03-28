@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 type K8sAdapter struct {
 	chartRef     string // e.g. "supabase-community/supabase"
 	chartVersion string // e.g. "0.5.2"
+	repoURL      string // e.g. "https://supabase-community.github.io/helm-charts"
 	dataDir      string // root directory for values.yaml files
 	renderer     domain.ConfigRenderer
 	runner       cmdRunner
@@ -25,15 +27,16 @@ type K8sAdapter struct {
 var _ domain.RuntimeAdapter = (*K8sAdapter)(nil)
 
 // NewK8sAdapter returns a K8sAdapter backed by the OS command runner.
-func NewK8sAdapter(chartRef, chartVersion, dataDir string, renderer domain.ConfigRenderer) *K8sAdapter {
-	return newK8sAdapterWithRunner(chartRef, chartVersion, dataDir, renderer, &osCmdRunner{})
+func NewK8sAdapter(chartRef, chartVersion, repoURL, dataDir string, renderer domain.ConfigRenderer) *K8sAdapter {
+	return newK8sAdapterWithRunner(chartRef, chartVersion, repoURL, dataDir, renderer, &osCmdRunner{})
 }
 
 // newK8sAdapterWithRunner is the white-box constructor used in tests.
-func newK8sAdapterWithRunner(chartRef, chartVersion, dataDir string, renderer domain.ConfigRenderer, runner cmdRunner) *K8sAdapter {
+func newK8sAdapterWithRunner(chartRef, chartVersion, repoURL, dataDir string, renderer domain.ConfigRenderer, runner cmdRunner) *K8sAdapter {
 	return &K8sAdapter{
 		chartRef:     chartRef,
 		chartVersion: chartVersion,
+		repoURL:      repoURL,
 		dataDir:      dataDir,
 		renderer:     renderer,
 		runner:       runner,
@@ -82,6 +85,10 @@ func (a *K8sAdapter) Create(ctx context.Context, project *domain.ProjectModel, c
 // Start installs or upgrades the Helm release and polls until all pods are
 // healthy or the timeout is reached.
 func (a *K8sAdapter) Start(ctx context.Context, project *domain.ProjectModel) error {
+	if err := a.ensureHelmRepo(ctx); err != nil {
+		return &domain.StartError{Slug: project.Slug, Err: err}
+	}
+
 	ns := a.namespace(project.Slug)
 	rel := a.releaseName(project.Slug)
 
@@ -205,6 +212,42 @@ func (a *K8sAdapter) ApplyConfig(ctx context.Context, project *domain.ProjectMod
 			"-n", ns, "--version", a.chartVersion, "-f", a.valuesPath(project.Slug)); err != nil {
 			return &domain.AdapterError{Operation: "apply-config:reconcile", Slug: project.Slug, Err: err}
 		}
+	}
+
+	return nil
+}
+
+// ensureHelmRepo checks whether the Helm repo for chartRef is already configured.
+// If the repoURL is empty the check is skipped (useful in tests or custom setups).
+// If the repo is missing it is added and the index is updated.
+func (a *K8sAdapter) ensureHelmRepo(ctx context.Context) error {
+	if a.repoURL == "" {
+		return nil
+	}
+
+	// Derive repo name from the chart reference (e.g. "supabase-community" from
+	// "supabase-community/supabase").
+	repoName := a.chartRef
+	if idx := strings.Index(a.chartRef, "/"); idx != -1 {
+		repoName = a.chartRef[:idx]
+	}
+
+	// `helm repo list` exits 1 with "no repositories configured" when the list is
+	// empty, so we treat any non-zero exit as "repo not present" only when the
+	// output does not contain the repo name.
+	out, _ := a.runner.Run(ctx, "", "helm", "repo", "list")
+	if strings.Contains(string(out), repoName) {
+		return nil // already configured
+	}
+
+	// Add the repo.
+	if _, err := a.runner.Run(ctx, "", "helm", "repo", "add", repoName, a.repoURL); err != nil {
+		return fmt.Errorf("helm repo add %s %s: %w", repoName, a.repoURL, err)
+	}
+
+	// Update the index so the pinned chart version is available.
+	if _, err := a.runner.Run(ctx, "", "helm", "repo", "update", repoName); err != nil {
+		return fmt.Errorf("helm repo update %s: %w", repoName, err)
 	}
 
 	return nil

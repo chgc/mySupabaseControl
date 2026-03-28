@@ -61,7 +61,8 @@ func (m *mockRenderer) Render(config *domain.ProjectConfig) ([]domain.Artifact, 
 }
 
 func newTestAdapter(dataDir string, renderer domain.ConfigRenderer, runner *fakeCmdRunner) *K8sAdapter {
-	a := newK8sAdapterWithRunner("supabase-community/supabase", "0.5.2", dataDir, renderer, runner)
+	// Empty repoURL disables ensureHelmRepo in unit tests.
+	a := newK8sAdapterWithRunner("supabase-community/supabase", "0.5.2", "", dataDir, renderer, runner)
 	a.pollInterval = 1 * time.Millisecond
 	a.maxPollTicks = 3
 	return a
@@ -565,4 +566,159 @@ func TestApplyConfig_WriteError(t *testing.T) {
 	var adapterErr *domain.AdapterError
 	require.ErrorAs(t, err, &adapterErr)
 	assert.Equal(t, "apply-config", adapterErr.Operation)
+}
+
+// ── ensureHelmRepo ────────────────────────────────────────────────────────────
+
+func newRepoAdapter(t *testing.T, repoURL string, runner *fakeCmdRunner) *K8sAdapter {
+	t.Helper()
+	return newK8sAdapterWithRunner("supabase-community/supabase", "0.5.2", repoURL, t.TempDir(), &mockRenderer{}, runner)
+}
+
+func TestEnsureHelmRepo_AlreadyPresent(t *testing.T) {
+	runner := &fakeCmdRunner{
+		RunFn: func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+			// helm repo list returns output containing the repo name
+			return []byte("NAME                  \tURL\nsupabase-community\thttps://example.com\n"), nil
+		},
+	}
+	dir := t.TempDir()
+	adapter := newK8sAdapterWithRunner("supabase-community/supabase", "0.5.2",
+		"https://supabase-community.github.io/helm-charts", dir, &mockRenderer{}, runner)
+	adapter.pollInterval = 1 * time.Millisecond
+	adapter.maxPollTicks = 1
+
+	// Prepare values.yaml so helm upgrade can be attempted
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "myproject"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "myproject", "values.yaml"), []byte("x: 1"), 0600))
+
+	// Start triggers ensureHelmRepo first.
+	// helm upgrade will also be called; make it return healthy pods.
+	callCount := 0
+	runner.RunFn = func(_ context.Context, _, name string, args ...string) ([]byte, error) {
+		callCount++
+		if name == "helm" && len(args) > 0 && args[0] == "repo" && args[1] == "list" {
+			return []byte("supabase-community\thttps://example.com"), nil
+		}
+		if name == "kubectl" {
+			return healthyPodsJSON(), nil
+		}
+		return nil, nil
+	}
+
+	err := adapter.Start(context.Background(), newAdapterTestProject("myproject", domain.StatusStarting))
+	require.NoError(t, err)
+
+	// Verify repo add was NOT called (repo was already present).
+	for _, c := range runner.Calls {
+		if c.Name == "helm" && len(c.Args) > 1 && c.Args[0] == "repo" && c.Args[1] == "add" {
+			t.Fatal("helm repo add should not be called when repo already exists")
+		}
+	}
+}
+
+func TestEnsureHelmRepo_NotPresent_AddAndUpdate(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "myproject"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "myproject", "values.yaml"), []byte("x: 1"), 0600))
+
+	callCount := 0
+	runner := &fakeCmdRunner{
+		RunFn: func(_ context.Context, _, name string, args ...string) ([]byte, error) {
+			callCount++
+			if name == "helm" && len(args) > 1 && args[0] == "repo" && args[1] == "list" {
+				// Repo not present
+				return []byte(""), nil
+			}
+			if name == "kubectl" {
+				return healthyPodsJSON(), nil
+			}
+			return nil, nil
+		},
+	}
+
+	adapter := newK8sAdapterWithRunner("supabase-community/supabase", "0.5.2",
+		"https://supabase-community.github.io/helm-charts", dir, &mockRenderer{}, runner)
+	adapter.pollInterval = 1 * time.Millisecond
+	adapter.maxPollTicks = 3
+
+	err := adapter.Start(context.Background(), newAdapterTestProject("myproject", domain.StatusStarting))
+	require.NoError(t, err)
+
+	// Verify repo add and update were called.
+	var calledAdd, calledUpdate bool
+	for _, c := range runner.Calls {
+		if c.Name == "helm" && len(c.Args) >= 2 && c.Args[0] == "repo" && c.Args[1] == "add" {
+			calledAdd = true
+			assert.Equal(t, "supabase-community", c.Args[2])
+			assert.Equal(t, "https://supabase-community.github.io/helm-charts", c.Args[3])
+		}
+		if c.Name == "helm" && len(c.Args) >= 2 && c.Args[0] == "repo" && c.Args[1] == "update" {
+			calledUpdate = true
+		}
+	}
+	assert.True(t, calledAdd, "helm repo add should be called")
+	assert.True(t, calledUpdate, "helm repo update should be called")
+}
+
+func TestEnsureHelmRepo_EmptyRepoURL_Skipped(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "myproject"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "myproject", "values.yaml"), []byte("x: 1"), 0600))
+
+	callCount := 0
+	runner := &fakeCmdRunner{
+		RunFn: func(_ context.Context, _, name string, args ...string) ([]byte, error) {
+			callCount++
+			if name == "kubectl" {
+				return healthyPodsJSON(), nil
+			}
+			return nil, nil
+		},
+	}
+
+	// Empty repoURL — ensureHelmRepo should be a no-op.
+	adapter := newK8sAdapterWithRunner("supabase-community/supabase", "0.5.2",
+		"", dir, &mockRenderer{}, runner)
+	adapter.pollInterval = 1 * time.Millisecond
+	adapter.maxPollTicks = 3
+
+	err := adapter.Start(context.Background(), newAdapterTestProject("myproject", domain.StatusStarting))
+	require.NoError(t, err)
+
+	for _, c := range runner.Calls {
+		if c.Name == "helm" && len(c.Args) > 0 && c.Args[0] == "repo" {
+			t.Fatalf("expected no helm repo commands when repoURL is empty, got: %v", c.Args)
+		}
+	}
+}
+
+func TestEnsureHelmRepo_AddFails(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "myproject"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "myproject", "values.yaml"), []byte("x: 1"), 0600))
+
+	runner := &fakeCmdRunner{
+		RunFn: func(_ context.Context, _, name string, args ...string) ([]byte, error) {
+			if name == "helm" && len(args) >= 2 && args[0] == "repo" && args[1] == "list" {
+				return []byte(""), nil // repo not present
+			}
+			if name == "helm" && len(args) >= 2 && args[0] == "repo" && args[1] == "add" {
+				return nil, errors.New("network unreachable")
+			}
+			return nil, nil
+		},
+	}
+
+	adapter := newK8sAdapterWithRunner("supabase-community/supabase", "0.5.2",
+		"https://supabase-community.github.io/helm-charts", dir, &mockRenderer{}, runner)
+	adapter.pollInterval = 1 * time.Millisecond
+	adapter.maxPollTicks = 3
+
+	err := adapter.Start(context.Background(), newAdapterTestProject("myproject", domain.StatusStarting))
+	require.Error(t, err)
+
+	var startErr *domain.StartError
+	require.ErrorAs(t, err, &startErr)
+	assert.Equal(t, "myproject", startErr.Slug)
 }

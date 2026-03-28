@@ -109,6 +109,8 @@ func buildRootCmd() *cobra.Command {
 	root.AddCommand(buildProjectCmd(&deps, &output))
 	root.AddCommand(buildMCPCmd())
 
+	root.SetFlagErrorFunc(flagErrorWithSuggestions)
+
 	return root
 }
 
