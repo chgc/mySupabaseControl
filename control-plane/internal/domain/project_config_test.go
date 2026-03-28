@@ -282,3 +282,28 @@ func TestErrConfigNotOverridable_ErrorInterface(t *testing.T) {
 	var target *domain.ErrConfigNotOverridable
 	assert.True(t, errors.As(err, &target))
 }
+
+// ─── computePerProjectVars runtime-specific ─────────────────────────────────
+
+func TestResolveConfig_DockerCompose_IncludesDockerSocket(t *testing.T) {
+	p, err := domain.NewProject("test-compose", "Test", domain.RuntimeDockerCompose)
+	require.NoError(t, err)
+
+	cfg, err := domain.ResolveConfig(p, allTestSecrets(), testPortSet(), nil)
+	require.NoError(t, err)
+
+	val, ok := cfg.Values["DOCKER_SOCKET_LOCATION"]
+	assert.True(t, ok, "docker-compose projects must include DOCKER_SOCKET_LOCATION")
+	assert.Equal(t, "/var/run/docker.sock", val)
+}
+
+func TestResolveConfig_Kubernetes_OmitsDockerSocket(t *testing.T) {
+	p, err := domain.NewProject("test-k8s", "Test", domain.RuntimeKubernetes)
+	require.NoError(t, err)
+
+	cfg, err := domain.ResolveConfig(p, allTestSecrets(), testPortSet(), nil)
+	require.NoError(t, err)
+
+	_, ok := cfg.Values["DOCKER_SOCKET_LOCATION"]
+	assert.False(t, ok, "kubernetes projects must NOT include DOCKER_SOCKET_LOCATION")
+}
