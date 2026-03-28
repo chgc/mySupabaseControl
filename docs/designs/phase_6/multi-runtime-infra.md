@@ -7,7 +7,7 @@
 
 ## 狀態
 
-tasks_generated
+done
 
 ## Phase
 
