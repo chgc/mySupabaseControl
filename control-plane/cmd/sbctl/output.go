@@ -26,7 +26,19 @@ func writeProjectView(w io.Writer, output string, view *usecase.ProjectView, c *
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
 			view.Slug, view.DisplayName, c.status(string(view.Status)),
 			view.UpdatedAt.UTC().Format(time.RFC3339))
-		return tw.Flush()
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+		if view.URLs != nil {
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "URLs:")
+			fmt.Fprintf(w, "  API      %s\n", view.URLs.API)
+			fmt.Fprintf(w, "  Studio   %s\n", view.URLs.Studio)
+			if view.URLs.Inbucket != "" {
+				fmt.Fprintf(w, "  Inbucket %s\n", view.URLs.Inbucket)
+			}
+		}
+		return nil
 	}
 }
 
