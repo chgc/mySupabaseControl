@@ -117,6 +117,7 @@ func buildRootCmd() *cobra.Command {
 	}
 
 	root.AddCommand(buildProjectCmd(&deps, &output, &colorOut))
+	root.AddCommand(buildStatusCmd(&deps, &output, &colorOut))
 	root.AddCommand(buildMCPCmd())
 	root.AddCommand(buildCompletionCmd())
 

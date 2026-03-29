@@ -112,6 +112,7 @@ func newTestRootCmd(svc usecase.ProjectService) *cobra.Command {
 	root.PersistentPreRunE = func(_ *cobra.Command, _ []string) error { return nil }
 	root.PersistentFlags().StringVarP(&output, "output", "o", "table", "")
 	root.AddCommand(buildProjectCmd(&deps, &output, &colorOut))
+	root.AddCommand(buildStatusCmd(&deps, &output, &colorOut))
 	return root
 }
 
