@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os/signal"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -37,11 +40,28 @@ type ProjectSummary struct {
 }
 
 func buildStatusCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
-	return &cobra.Command{
+	var watchCfg watchConfig
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show system-wide project status overview",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if watchCfg.enabled {
+				if *output != "table" {
+					return &ExitError{Code: 1, Err: fmt.Errorf("--watch is only supported with table output format")}
+				}
+				ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+				defer stop()
+				renderFn := func(ctx context.Context) error {
+					views, err := (*deps).ProjectService.List(ctx)
+					if err != nil {
+						return err
+					}
+					return writeStatusOverview(cmd.OutOrStdout(), *output, views, *colorOut)
+				}
+				return runWatch(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), watchCfg, renderFn)
+			}
+
 			views, err := (*deps).ProjectService.List(cmd.Context())
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err)
@@ -50,6 +70,8 @@ func buildStatusCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Comm
 			return writeStatusOverview(cmd.OutOrStdout(), *output, views, *colorOut)
 		},
 	}
+	addWatchFlags(cmd, &watchCfg)
+	return cmd
 }
 
 func writeStatusOverview(w io.Writer, output string, views []*usecase.ProjectView, c *colorer) error {

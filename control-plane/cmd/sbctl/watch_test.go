@@ -197,3 +197,32 @@ func TestRunWatch_MultipleRenders(t *testing.T) {
 	count := strings.Count(buf.String(), "RENDERED")
 	assert.Greater(t, count, 1, "should render multiple times within the timeout")
 }
+
+// --- watch integration: --watch + non-table output errors ---
+
+func TestProjectGet_WatchWithJSON(t *testing.T) {
+	root := newTestRootCmd(&mockSvc{})
+	_, _, err := runCmd(t, root, []string{"-o", "json", "project", "get", "--watch", "myproj"}, "")
+	if err == nil {
+		t.Fatal("expected error when --watch used with json output")
+	}
+	assert.Contains(t, err.Error(), "--watch is only supported with table output format")
+}
+
+func TestProjectList_WatchWithJSON(t *testing.T) {
+	root := newTestRootCmd(&mockSvc{})
+	_, _, err := runCmd(t, root, []string{"-o", "json", "project", "list", "--watch"}, "")
+	if err == nil {
+		t.Fatal("expected error when --watch used with json output")
+	}
+	assert.Contains(t, err.Error(), "--watch is only supported with table output format")
+}
+
+func TestStatus_WatchWithJSON(t *testing.T) {
+	root := newTestRootCmd(&mockSvc{})
+	_, _, err := runCmd(t, root, []string{"-o", "json", "status", "--watch"}, "")
+	if err == nil {
+		t.Fatal("expected error when --watch used with json output")
+	}
+	assert.Contains(t, err.Error(), "--watch is only supported with table output format")
+}
