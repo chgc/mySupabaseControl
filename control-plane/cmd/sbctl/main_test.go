@@ -370,25 +370,25 @@ func TestProjectDelete_ConfirmationMismatch(t *testing.T) {
 }
 
 func TestProjectCredentials_Table(t *testing.T) {
-root := newTestRootCmd(&mockSvc{})
-out, _, err := runCmd(t, root, []string{"project", "credentials", "myproj"}, "")
-if err != nil {
-t.Fatalf("unexpected error: %v", err)
-}
-for _, want := range []string{"Studio URL", "Dashboard Username", "supabase", "anon-key"} {
-if !strings.Contains(out, want) {
-t.Errorf("expected %q in output, got: %q", want, out)
-}
-}
+	root := newTestRootCmd(&mockSvc{})
+	out, _, err := runCmd(t, root, []string{"project", "credentials", "myproj"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"Studio URL", "Dashboard Username", "supabase", "anon-key"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got: %q", want, out)
+		}
+	}
 }
 
 func TestProjectCredentials_JSON(t *testing.T) {
-root := newTestRootCmd(&mockSvc{})
-out, _, err := runCmd(t, root, []string{"--output", "json", "project", "credentials", "myproj"}, "")
-if err != nil {
-t.Fatalf("unexpected error: %v", err)
-}
-if !strings.Contains(out, `"anon_key"`) {
-t.Errorf("expected JSON key in output, got: %q", out)
-}
+	root := newTestRootCmd(&mockSvc{})
+	out, _, err := runCmd(t, root, []string{"--output", "json", "project", "credentials", "myproj"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, `"anon_key"`) {
+		t.Errorf("expected JSON key in output, got: %q", out)
+	}
 }

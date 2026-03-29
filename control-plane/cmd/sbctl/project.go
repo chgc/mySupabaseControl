@@ -94,6 +94,11 @@ func buildListCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Comman
 				}
 				ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 				defer stop()
+				if watchCfg.timeout > 0 {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, watchCfg.timeout)
+					defer cancel()
+				}
 				renderFn := func(ctx context.Context) error {
 					views, err := (*deps).ProjectService.List(ctx)
 					if err != nil {
@@ -128,6 +133,11 @@ func buildGetCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command
 				}
 				ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 				defer stop()
+				if watchCfg.timeout > 0 {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, watchCfg.timeout)
+					defer cancel()
+				}
 				renderFn := func(ctx context.Context) error {
 					view, err := (*deps).ProjectService.Get(ctx, args[0])
 					if err != nil {

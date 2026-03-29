@@ -286,5 +286,3 @@ func jsonResult(v interface{}) (*mcp.CallToolResult, error) {
 	}
 	return mcp.NewToolResultText(string(b)), nil
 }
-
-

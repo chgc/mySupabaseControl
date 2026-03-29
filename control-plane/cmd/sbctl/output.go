@@ -129,4 +129,3 @@ func writeCredentialsView(w io.Writer, output string, cv *usecase.CredentialsVie
 		return tw.Flush()
 	}
 }
-
