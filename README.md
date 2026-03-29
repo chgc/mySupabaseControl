@@ -123,13 +123,18 @@ just --list
 
 ```bash
 # 建立並啟動新專案（自動分配 ports 與 secrets）
+# 建立後自動顯示 Studio URL、API URL、Postgres DSN、API Keys
 ./sbctl project create my-project --display-name "My Project"
 
-# 列出所有專案
+# 列出所有專案（狀態欄位以顏色標示：running=綠、stopped=灰、error=紅）
 ./sbctl project list
 
 # 查詢專案詳情（URLs、狀態、健康度）
 ./sbctl project get my-project
+
+# 持續輪詢狀態（--watch 模式）
+./sbctl project get my-project --watch
+./sbctl project list --watch --watch-interval 3s --watch-timeout 5m
 
 # 查看連線 credentials（含未遮罩的 API keys）
 ./sbctl project credentials my-project
@@ -139,19 +144,39 @@ just --list
 ./sbctl project start my-project
 ./sbctl project reset my-project
 ./sbctl project delete my-project
+
+# 所有專案狀態總覽
+./sbctl status
+./sbctl status --watch
 ```
 
 ### 輸出格式
 
 ```bash
-# Table（預設，適合終端機）
+# Table（預設，適合終端機；含 ANSI 色彩）
 ./sbctl project list
+
+# 關閉色彩（管線或不支援 ANSI 的終端）
+./sbctl project list --no-color
+# 或設定環境變數：export NO_COLOR=1
 
 # JSON（適合腳本與 AI agent 解析）
 ./sbctl -o json project list
 
 # YAML
 ./sbctl -o yaml project get my-project
+```
+
+### Shell Completion
+
+```bash
+# 產生補全腳本
+./sbctl completion bash   # Bash
+./sbctl completion zsh    # Zsh
+./sbctl completion fish   # Fish
+
+# 安裝（以 zsh 為例）
+./sbctl completion zsh > ~/.zsh/completions/_sbctl
 ```
 
 ### 進階安裝選項
@@ -244,7 +269,7 @@ mySupabaseControl/
 | **2** | Docker Compose Runtime Adapter | ✅ 完成 |
 | **3** | Use-case 層、sbctl CLI、MCP Server | ✅ 完成 |
 | **4** | Telegram Bot 遠端控制 | 🔜 規劃中 |
-| **5** | CLI UX 改善與 AI Agent 整合優化 | 🔜 規劃中 |
+| **5** | CLI UX 改善與 AI Agent 整合優化 | ✅ 完成 |
 | **6** | K8s Runtime Adapter（Mac Mini） | 🔜 規劃中 |
 
 詳細設計文件：[`docs/CONTROL_PLANE.md`](./docs/CONTROL_PLANE.md)

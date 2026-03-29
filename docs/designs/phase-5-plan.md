@@ -41,12 +41,12 @@ Phase 5 完成後，`sbctl` CLI 應提供更直覺、更豐富的操作體驗，
 
 | # | 功能名稱 | 設計文件路徑 | 狀態 | 說明 |
 |---|----------|-------------|------|------|
-| 1 | CLI 彩色輸出 | `docs/designs/phase_5/cli-colored-output.md` | 未開始 | 狀態欄位彩色標示（ANSI）、`--no-color` 旗標、`NO_COLOR` 環境變數支援 |
-| 2 | 建立專案連線資訊 | `docs/designs/phase_5/create-connection-info.md` | 未開始 | `project create` 與 `project get` 輸出增加 Studio URL、API URL、Postgres DSN、API keys |
-| 3 | 全專案狀態總覽 | `docs/designs/phase_5/status-overview.md` | 未開始 | `sbctl status` 新命令，顯示所有專案聚合狀態（含 runtime 類型、服務健康計數） |
-| 4 | Watch 模式 | `docs/designs/phase_5/watch-mode.md` | 未開始 | `--watch` 旗標：輪詢專案狀態直到 running/error，含 timeout 控制 |
-| 5 | Shell 補全 | `docs/designs/phase_5/shell-completion.md` | 未開始 | `sbctl completion bash/zsh/fish` 產生補全腳本，支援命令、slug、旗標補全 |
-| 6 | MCP Tool 說明精細化 | `docs/designs/phase_5/mcp-tool-refinement.md` | 未開始 | 重新撰寫 MCP tool descriptions，提升 AI agent 決策品質 |
+| 1 | CLI 彩色輸出 | `docs/designs/phase_5/cli-colored-output.md` | ✅ 完成 | 狀態欄位彩色標示（ANSI）、`--no-color` 旗標、`NO_COLOR` 環境變數支援 |
+| 2 | 建立專案連線資訊 | `docs/designs/phase_5/create-connection-info.md` | ✅ 完成 | `project create` 與 `project get` 輸出增加 Studio URL、API URL、Postgres DSN、API keys |
+| 3 | 全專案狀態總覽 | `docs/designs/phase_5/status-overview.md` | ✅ 完成 | `sbctl status` 新命令，顯示所有專案聚合狀態（含 runtime 類型、服務健康計數） |
+| 4 | Watch 模式 | `docs/designs/phase_5/watch-mode.md` | ✅ 完成 | `--watch` 旗標：輪詢專案狀態直到 running/error，含 timeout 控制 |
+| 5 | Shell 補全 | `docs/designs/phase_5/shell-completion.md` | ✅ 完成 | `sbctl completion bash/zsh/fish` 產生補全腳本，支援命令、slug、旗標補全 |
+| 6 | MCP Tool 說明精細化 | `docs/designs/phase_5/mcp-tool-refinement.md` | ✅ 完成 | 重新撰寫 MCP tool descriptions，提升 AI agent 決策品質 |
 
 ---
 
@@ -90,24 +90,24 @@ Phase 5 完成後，`sbctl` CLI 應提供更直覺、更豐富的操作體驗，
 
 ### 設計階段
 
-- [ ] 所有功能的設計文件狀態為 `approved`（通過兩位 reviewer 審查）
-  - [ ] `cli-colored-output.md` — approved
-  - [ ] `create-connection-info.md` — approved
-  - [ ] `status-overview.md` — approved
-  - [ ] `watch-mode.md` — approved
-  - [ ] `shell-completion.md` — approved
-  - [ ] `mcp-tool-refinement.md` — approved
+- [x] 所有功能的設計文件狀態為 `approved`（通過兩位 reviewer 審查）
+  - [x] `cli-colored-output.md` — approved
+  - [x] `create-connection-info.md` — approved
+  - [x] `status-overview.md` — approved
+  - [x] `watch-mode.md` — approved
+  - [x] `shell-completion.md` — approved
+  - [x] `mcp-tool-refinement.md` — approved
 
 ### 實作階段
 
 | 任務 ID | 說明 | 狀態 |
 |---------|------|------|
-| cli-colored-output | ANSI 彩色狀態 + `--no-color` + `NO_COLOR` env | 未開始 |
-| create-connection-info | create/get 輸出增加連線資訊 | 未開始 |
-| status-overview | `sbctl status` 聚合總覽命令 | 未開始 |
-| watch-mode | `--watch` 輪詢旗標 | 未開始 |
-| shell-completion | `sbctl completion bash/zsh/fish` | 未開始 |
-| mcp-tool-refinement | MCP tool descriptions 精細化 | 未開始 |
+| cli-colored-output | ANSI 彩色狀態 + `--no-color` + `NO_COLOR` env | ✅ 完成 |
+| create-connection-info | create/get 輸出增加連線資訊 | ✅ 完成 |
+| status-overview | `sbctl status` 聚合總覽命令 | ✅ 完成 |
+| watch-mode | `--watch` 輪詢旗標 | ✅ 完成 |
+| shell-completion | `sbctl completion bash/zsh/fish` | ✅ 完成 |
+| mcp-tool-refinement | MCP tool descriptions 精細化 | ✅ 完成 |
 
 ### Phase 整合驗證
 
@@ -174,3 +174,4 @@ sbctl project delete smoke-test --yes
 | 日期 | 變更內容 | 原因 |
 |------|---------|------|
 | 2026-03-28 | 初稿建立 | Phase 5 規劃，拆解為 6 個功能 |
+| 2026-03-29 | Phase 5 完成 | 12 commits，17 檔案，+1700 行；程式碼審查通過（2 輪） |

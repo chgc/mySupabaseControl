@@ -266,14 +266,14 @@ Runtime Adapter 必須抽象化上述所有差異。
 - Bot token 存於環境變數 `TELEGRAM_BOT_TOKEN`。
 - 套件：`github.com/go-telegram-bot-api/telegram-bot-api/v5`。
 
-### Phase 5 — 改善 CLI 使用體驗與 AI Agent 整合
+### Phase 5 — 改善 CLI 使用體驗與 AI Agent 整合 ✅
 
-> **Phase Plan：** `docs/designs/phase-5-plan.md`（待建立）
+> **Phase Plan：** `docs/designs/phase-5-plan.md`
 
-- Shell completion（`sbctl completion bash/zsh/fish`）。
+- Shell completion（`sbctl completion bash/zsh/fish`）— 含動態 project slug 補全。
 - 建立專案後顯示完整連線資訊（Studio URL、API URL、Postgres DSN、Anon/Service role key）。
-- `sbctl project list` 表格含彩色狀態欄位（running=綠、stopped=灰、error=紅）。
-- `--watch` 旗標：`sbctl project get <slug> --watch` 輪詢狀態直到 running/error。
+- `sbctl project list` 表格含彩色狀態欄位（running=綠、stopped=灰、error=紅），支援 `--no-color` 與 `NO_COLOR`。
+- `--watch` 旗標：`sbctl project get/list/status --watch` 持續輪詢，支援 `--watch-interval`、`--watch-timeout`。
 - MCP tool 說明文字（description）精細化，讓 AI agent 能更準確選擇工具。
 - 全專案狀態彙整總覽（`sbctl status`）。
 
