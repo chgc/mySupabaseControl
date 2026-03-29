@@ -17,13 +17,28 @@
 
 | 元件 | 目前做法 | 相關檔案 |
 |---|---|---|
-| 基底設定 | 69 個變數的 `.env` 範本 | `.env` |
-| 專案建立 | 複製基底 `.env` 並附加覆寫值 | `scripts/new-project.{ps1,sh}` |
-| Runtime 生命週期 | `docker compose --env-file ... -p ...` | `justfile` |
-| 重置 | 刪除 volumes + compose down | `reset.ps1`, `scripts/reset.sh` |
-| 隔離方式 | Compose 專案名稱前綴 | `-p supabase-<slug>` |
-| Port 分配 | 使用者手動輸入，無衝突偵測 | `new-project` 的 CLI 參數 |
-| Secrets | 所有專案共用基底 | 基底 `.env` 複製 |
+| 專案建立 | `sbctl project create <slug>` — 自動分配 ports、產生 secrets、顯示連線資訊 | `cmd/sbctl/project.go` |
+| Runtime 生命週期 | `sbctl project start/stop/reset/delete` — 透過 Docker Compose Adapter | `internal/adapter/compose/` |
+| 狀態查詢 | `sbctl project get/list`（彩色 table）、`sbctl status`（聚合總覽） | `cmd/sbctl/output.go`, `status.go` |
+| Watch 模式 | `--watch` 旗標持續輪詢，支援 `--watch-interval`、`--watch-timeout` | `cmd/sbctl/watch.go` |
+| Shell 補全 | `sbctl completion bash/zsh/fish`，含動態 slug 補全 | `cmd/sbctl/completion.go` |
+| Port 分配 | Control Plane 自動偵測衝突、分配可用 port | `internal/usecase/` |
+| Secrets | 每個專案獨立產生，存於 Control Plane DB | `internal/store/postgres/` |
+| MCP Server | `sbctl mcp serve` — 7 個工具，描述精細化，供 AI agent 整合 | `cmd/sbctl/mcp.go` |
+| 狀態儲存 | PostgreSQL（自架 Supabase 實例）| `internal/store/postgres/` |
+| 舊式操作（相容） | `just up/down/ps/reset` shell 腳本介面仍可使用 | `justfile` |
+
+### Phase 完成狀態
+
+| Phase | 說明 | 狀態 |
+|-------|------|------|
+| **0** | High-Level Design Discussion | ✅ 完成 |
+| **1** | 定義 Runtime 無關的 Control Plane 模型 | ✅ 完成 |
+| **2** | Docker Compose Runtime Adapter | ✅ 完成 |
+| **3** | Use-case 層、sbctl CLI、MCP Server | ✅ 完成 |
+| **4** | Telegram Bot 遠端控制 | 🔜 規劃中 |
+| **5** | CLI UX 改善與 AI Agent 整合優化 | ✅ 完成 |
+| **6** | K8s Runtime Adapter（Mac Mini） | 🔜 規劃中 |
 
 ---
 
