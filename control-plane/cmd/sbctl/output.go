@@ -87,6 +87,17 @@ func writeDeleteResult(w io.Writer, output string, slug string) error {
 	}
 }
 
+func writeCreateSummary(w io.Writer, creds *usecase.CredentialsView) error {
+	fmt.Fprintln(w, "\nConnection Info:")
+	fmt.Fprintf(w, "  API URL           %s\n", creds.APIURL)
+	fmt.Fprintf(w, "  Anon Key          %s\n", creds.AnonKey)
+	fmt.Fprintf(w, "  DB Host           %s\n", creds.PostgresHost)
+	fmt.Fprintf(w, "  DB Port           %s\n", creds.PostgresPort)
+	fmt.Fprintf(w, "  DB Password       %s\n", creds.PostgresPassword)
+	fmt.Fprintf(w, "\n  Run 'sbctl project credentials %s' for full credentials.\n", creds.Slug)
+	return nil
+}
+
 func writeCredentialsView(w io.Writer, output string, cv *usecase.CredentialsView) error {
 	switch output {
 	case "json":

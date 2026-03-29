@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -51,7 +54,18 @@ func buildCreateCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Comm
 			if err != nil {
 				return projectErr(cmd, err)
 			}
-			return writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut)
+			if err := writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut); err != nil {
+				return err
+			}
+			if *output == "table" {
+				creds, credErr := (*deps).ProjectService.GetCredentials(cmd.Context(), args[0])
+				if credErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not retrieve credentials: %v\n", credErr)
+				} else {
+					writeCreateSummary(cmd.OutOrStdout(), creds)
+				}
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&displayName, "display-name", "n", "", "Human-readable project name (required)")
@@ -68,11 +82,28 @@ func buildCreateCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Comm
 }
 
 func buildListCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
-	return &cobra.Command{
+	var watchCfg watchConfig
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all active Supabase projects",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if watchCfg.enabled {
+				if *output != "table" {
+					return &ExitError{Code: 1, Err: fmt.Errorf("--watch is only supported with table output format")}
+				}
+				ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+				defer stop()
+				renderFn := func(ctx context.Context) error {
+					views, err := (*deps).ProjectService.List(ctx)
+					if err != nil {
+						return err
+					}
+					return writeProjectViews(cmd.OutOrStdout(), *output, views, *colorOut)
+				}
+				return runWatch(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), watchCfg, renderFn)
+			}
+
 			views, err := (*deps).ProjectService.List(cmd.Context())
 			if err != nil {
 				return projectErr(cmd, err)
@@ -80,14 +111,33 @@ func buildListCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Comman
 			return writeProjectViews(cmd.OutOrStdout(), *output, views, *colorOut)
 		},
 	}
+	addWatchFlags(cmd, &watchCfg)
+	return cmd
 }
 
 func buildGetCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command {
+	var watchCfg watchConfig
 	cmd := &cobra.Command{
 		Use:   "get <slug>",
 		Short: "Get details of a Supabase project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if watchCfg.enabled {
+				if *output != "table" {
+					return &ExitError{Code: 1, Err: fmt.Errorf("--watch is only supported with table output format")}
+				}
+				ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+				defer stop()
+				renderFn := func(ctx context.Context) error {
+					view, err := (*deps).ProjectService.Get(ctx, args[0])
+					if err != nil {
+						return err
+					}
+					return writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut)
+				}
+				return runWatch(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), watchCfg, renderFn)
+			}
+
 			view, err := (*deps).ProjectService.Get(cmd.Context(), args[0])
 			if err != nil {
 				return projectErr(cmd, err)
@@ -95,6 +145,7 @@ func buildGetCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Command
 			return writeProjectView(cmd.OutOrStdout(), *output, view, *colorOut)
 		},
 	}
+	addWatchFlags(cmd, &watchCfg)
 	cmd.ValidArgsFunction = projectSlugCompletion(deps)
 	return cmd
 }

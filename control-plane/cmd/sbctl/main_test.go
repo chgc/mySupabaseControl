@@ -237,6 +237,57 @@ func TestProjectCreate_Success(t *testing.T) {
 	if !strings.Contains(out, "newproj") {
 		t.Errorf("expected slug in output, got: %q", out)
 	}
+	// Table format should include connection summary
+	for _, want := range []string{"Connection Info:", "API URL", "Anon Key", "DB Host", "DB Port", "DB Password"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got: %q", want, out)
+		}
+	}
+	if !strings.Contains(out, "sbctl project credentials newproj") {
+		t.Errorf("expected credentials hint in output, got: %q", out)
+	}
+}
+
+func TestProjectCreate_CredentialsWarning(t *testing.T) {
+	root := newTestRootCmd(&mockSvc{
+		CredentialsFn: func(_ context.Context, _ string) (*usecase.CredentialsView, error) {
+			return nil, &usecase.UsecaseError{Code: usecase.ErrCodeInternal, Message: "creds unavailable"}
+		},
+	})
+	out, errOut, err := runCmd(t, root, []string{"project", "create", "newproj", "--display-name", "New Project"}, "")
+	if err != nil {
+		t.Fatalf("expected no error (warning only), got: %v", err)
+	}
+	if !strings.Contains(out, "newproj") {
+		t.Errorf("expected slug in output, got: %q", out)
+	}
+	if !strings.Contains(errOut, "Warning: could not retrieve credentials") {
+		t.Errorf("expected warning in stderr, got: %q", errOut)
+	}
+	// Should NOT contain connection info when credentials fail
+	if strings.Contains(out, "Connection Info:") {
+		t.Errorf("expected no connection info on credentials failure, got: %q", out)
+	}
+}
+
+func TestProjectCreate_JSON_NoCredentials(t *testing.T) {
+	credsCalled := false
+	root := newTestRootCmd(&mockSvc{
+		CredentialsFn: func(_ context.Context, _ string) (*usecase.CredentialsView, error) {
+			credsCalled = true
+			return nil, nil
+		},
+	})
+	out, _, err := runCmd(t, root, []string{"-o", "json", "project", "create", "newproj", "--display-name", "New"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if credsCalled {
+		t.Error("GetCredentials should not be called for JSON output")
+	}
+	if !strings.Contains(out, `"slug"`) {
+		t.Errorf("expected JSON with slug, got: %q", out)
+	}
 }
 
 func TestProjectCreate_MissingDisplayName(t *testing.T) {

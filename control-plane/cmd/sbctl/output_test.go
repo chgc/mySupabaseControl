@@ -104,6 +104,40 @@ func TestWriteProjectView_JSON_NoURLs(t *testing.T) {
 	}
 }
 
+func TestWriteCreateSummary(t *testing.T) {
+	var buf bytes.Buffer
+	creds := &usecase.CredentialsView{
+		Slug:             "myproj",
+		APIURL:           "http://localhost:54321",
+		AnonKey:          "anon-key",
+		PostgresHost:     "localhost",
+		PostgresPort:     "54322",
+		PostgresPassword: "pg-password",
+	}
+	if err := writeCreateSummary(&buf, creds); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"Connection Info:",
+		"API URL",
+		"http://localhost:54321",
+		"Anon Key",
+		"anon-key",
+		"DB Host",
+		"localhost",
+		"DB Port",
+		"54322",
+		"DB Password",
+		"pg-password",
+		"sbctl project credentials myproj",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
+	}
+}
+
 // noColor returns a nil *colorer, matching test convention (nil is safe).
 func noColor() *colorer {
 	return nil
