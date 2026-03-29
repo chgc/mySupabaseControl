@@ -62,7 +62,9 @@ func buildCreateCmd(deps **Deps, output *string, colorOut **colorer) *cobra.Comm
 				if credErr != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not retrieve credentials: %v\n", credErr)
 				} else {
-					writeCreateSummary(cmd.OutOrStdout(), creds)
+					if err := writeCreateSummary(cmd.OutOrStdout(), creds); err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not display connection info: %v\n", err)
+					}
 				}
 			}
 			return nil
