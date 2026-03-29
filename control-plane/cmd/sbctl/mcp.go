@@ -85,17 +85,17 @@ func buildMCPServer(deps *Deps) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("list_projects",
-			mcp.WithDescription("List all active Supabase projects."),
+			mcp.WithDescription("List all Supabase projects managed by the control plane. Returns an array of project summaries (slug, display_name, status, runtime, timestamps). Does NOT include config, URLs, or health — use get_project for full details on a specific project."),
 		),
 		makeMCPListProjects(deps),
 	)
 
 	s.AddTool(
 		mcp.NewTool("get_project",
-			mcp.WithDescription("Get details of a Supabase project including config and health."),
+			mcp.WithDescription("Get full details of a Supabase project by slug, including config (secrets are masked as `***`), service URLs, and container health status. MCP does not expose raw secret values — use the CLI `sbctl project credentials` command for that."),
 			mcp.WithString("slug",
 				mcp.Required(),
-				mcp.Description("Project slug identifier"),
+				mcp.Description("The unique slug identifier of the target project. Use list_projects to find available slugs."),
 			),
 		),
 		makeMCPGetProject(deps),
@@ -103,17 +103,17 @@ func buildMCPServer(deps *Deps) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("create_project",
-			mcp.WithDescription("Create and start a new Supabase project."),
+			mcp.WithDescription("Create a new Supabase project. The project is created in stopped status — call start_project to bring up its services."),
 			mcp.WithString("slug",
 				mcp.Required(),
-				mcp.Description("Unique project identifier (lowercase, hyphens allowed)"),
+				mcp.Description("Unique identifier for the project. Must be 3-40 characters, lowercase alphanumeric and hyphens only. Immutable after creation; used as the directory name and docker-compose project prefix."),
 			),
 			mcp.WithString("display_name",
 				mcp.Required(),
-				mcp.Description("Human-readable project name"),
+				mcp.Description("Human-readable display name for the project (max 100 characters)."),
 			),
 			mcp.WithString("runtime",
-				mcp.Description("Runtime type: docker-compose (default) or kubernetes"),
+				mcp.Description("Container runtime to use: 'docker-compose' (default, local Docker) or 'kubernetes' (OrbStack/k3s cluster)."),
 			),
 		),
 		makeMCPCreateProject(deps),
@@ -121,10 +121,10 @@ func buildMCPServer(deps *Deps) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("start_project",
-			mcp.WithDescription("Start a stopped Supabase project."),
+			mcp.WithDescription("Start a stopped or errored Supabase project. Valid source states: stopped, or error (only if the previous status was starting, running, or stopping). Transitions through starting → running."),
 			mcp.WithString("slug",
 				mcp.Required(),
-				mcp.Description("Project slug identifier"),
+				mcp.Description("The unique slug identifier of the target project. Use list_projects to find available slugs."),
 			),
 		),
 		makeMCPStartProject(deps),
@@ -132,10 +132,10 @@ func buildMCPServer(deps *Deps) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("stop_project",
-			mcp.WithDescription("Stop a running Supabase project."),
+			mcp.WithDescription("Stop a running Supabase project. Shuts down all containers but preserves data volumes so the project can be restarted later."),
 			mcp.WithString("slug",
 				mcp.Required(),
-				mcp.Description("Project slug identifier"),
+				mcp.Description("The unique slug identifier of the target project. Use list_projects to find available slugs."),
 			),
 		),
 		makeMCPStopProject(deps),
@@ -143,10 +143,10 @@ func buildMCPServer(deps *Deps) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("reset_project",
-			mcp.WithDescription("Reset a Supabase project: wipes all data and re-provisions."),
+			mcp.WithDescription("WARNING: Reset a Supabase project. Destroys ALL data (volumes, configs) and re-provisions from scratch. New secrets and new port allocations are generated — only the slug and display_name are preserved."),
 			mcp.WithString("slug",
 				mcp.Required(),
-				mcp.Description("Project slug identifier"),
+				mcp.Description("The unique slug identifier of the target project. Use list_projects to find available slugs."),
 			),
 		),
 		makeMCPResetProject(deps),
@@ -154,10 +154,10 @@ func buildMCPServer(deps *Deps) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("delete_project",
-			mcp.WithDescription("Permanently delete a Supabase project and destroy all its data. This action is irreversible."),
+			mcp.WithDescription("Permanently delete a Supabase project and all its resources (containers, volumes, configs, database records). IRREVERSIBLE — the project cannot be recovered after deletion."),
 			mcp.WithString("slug",
 				mcp.Required(),
-				mcp.Description("Project slug identifier"),
+				mcp.Description("The unique slug identifier of the target project. Use list_projects to find available slugs."),
 			),
 		),
 		makeMCPDeleteProject(deps),
@@ -286,5 +286,3 @@ func jsonResult(v interface{}) (*mcp.CallToolResult, error) {
 	}
 	return mcp.NewToolResultText(string(b)), nil
 }
-
-

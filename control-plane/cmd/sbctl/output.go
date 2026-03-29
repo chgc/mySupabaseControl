@@ -12,7 +12,7 @@ import (
 	"github.com/kevin/supabase-control-plane/internal/usecase"
 )
 
-func writeProjectView(w io.Writer, output string, view *usecase.ProjectView) error {
+func writeProjectView(w io.Writer, output string, view *usecase.ProjectView, c *colorer) error {
 	switch output {
 	case "json":
 		enc := json.NewEncoder(w)
@@ -24,13 +24,25 @@ func writeProjectView(w io.Writer, output string, view *usecase.ProjectView) err
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "SLUG\tDISPLAY NAME\tSTATUS\tUPDATED")
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			view.Slug, view.DisplayName, string(view.Status),
+			view.Slug, view.DisplayName, c.status(string(view.Status)),
 			view.UpdatedAt.UTC().Format(time.RFC3339))
-		return tw.Flush()
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+		if view.URLs != nil {
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "URLs:")
+			fmt.Fprintf(w, "  API      %s\n", view.URLs.API)
+			fmt.Fprintf(w, "  Studio   %s\n", view.URLs.Studio)
+			if view.URLs.Inbucket != "" {
+				fmt.Fprintf(w, "  Inbucket %s\n", view.URLs.Inbucket)
+			}
+		}
+		return nil
 	}
 }
 
-func writeProjectViews(w io.Writer, output string, views []*usecase.ProjectView) error {
+func writeProjectViews(w io.Writer, output string, views []*usecase.ProjectView, c *colorer) error {
 	switch output {
 	case "json":
 		enc := json.NewEncoder(w)
@@ -49,7 +61,7 @@ func writeProjectViews(w io.Writer, output string, views []*usecase.ProjectView)
 		fmt.Fprintln(tw, "SLUG\tDISPLAY NAME\tSTATUS\tUPDATED")
 		for _, v := range views {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-				v.Slug, v.DisplayName, string(v.Status),
+				v.Slug, v.DisplayName, c.status(string(v.Status)),
 				v.UpdatedAt.UTC().Format(time.RFC3339))
 		}
 		return tw.Flush()
@@ -73,6 +85,17 @@ func writeDeleteResult(w io.Writer, output string, slug string) error {
 		fmt.Fprintf(w, "Deleted project %q.\n", slug)
 		return nil
 	}
+}
+
+func writeCreateSummary(w io.Writer, creds *usecase.CredentialsView) error {
+	fmt.Fprintln(w, "\nConnection Info:")
+	fmt.Fprintf(w, "  API URL           %s\n", creds.APIURL)
+	fmt.Fprintf(w, "  Anon Key          %s\n", creds.AnonKey)
+	fmt.Fprintf(w, "  DB Host           %s\n", creds.PostgresHost)
+	fmt.Fprintf(w, "  DB Port           %s\n", creds.PostgresPort)
+	fmt.Fprintf(w, "  DB Password       %s\n", creds.PostgresPassword)
+	fmt.Fprintf(w, "\n  Run 'sbctl project credentials %s' for full credentials.\n", creds.Slug)
+	return nil
 }
 
 func writeCredentialsView(w io.Writer, output string, cv *usecase.CredentialsView) error {
@@ -106,4 +129,3 @@ func writeCredentialsView(w io.Writer, output string, cv *usecase.CredentialsVie
 		return tw.Flush()
 	}
 }
-

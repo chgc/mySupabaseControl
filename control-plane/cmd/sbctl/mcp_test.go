@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kevin/supabase-control-plane/internal/usecase"
 )
@@ -131,4 +133,139 @@ func extractText(t *testing.T, res *mcp.CallToolResult) string {
 		}
 	}
 	return ""
+}
+
+// --- tool description tests ---
+
+func TestBuildMCPServer_NoPanic(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{}}
+	require.NotPanics(t, func() {
+		s := buildMCPServer(deps)
+		require.NotNil(t, s)
+	})
+}
+
+func TestMCPTools_AllHaveDescriptions(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{}}
+	s := buildMCPServer(deps)
+
+	expectedTools := []string{
+		"list_projects",
+		"get_project",
+		"create_project",
+		"start_project",
+		"stop_project",
+		"reset_project",
+		"delete_project",
+	}
+
+	tools := s.ListTools()
+	require.Len(t, tools, 7, "expected exactly 7 MCP tools")
+
+	for _, name := range expectedTools {
+		st := s.GetTool(name)
+		require.NotNilf(t, st, "tool %q not registered", name)
+		assert.NotEmpty(t, st.Tool.Description, "tool %q has empty description", name)
+	}
+}
+
+func TestMCPTools_ParametersHaveDescriptions(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{}}
+	s := buildMCPServer(deps)
+
+	tools := s.ListTools()
+	for name, st := range tools {
+		for paramName, paramSchema := range st.Tool.InputSchema.Properties {
+			paramMap, ok := paramSchema.(map[string]any)
+			if !ok {
+				continue
+			}
+			desc, _ := paramMap["description"].(string)
+			assert.NotEmptyf(t, desc, "tool %q param %q has empty description", name, paramName)
+		}
+	}
+}
+
+func TestMCPTools_KeyPhrases(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{}}
+	s := buildMCPServer(deps)
+
+	tests := []struct {
+		tool   string
+		phrase string
+	}{
+		{"list_projects", "get_project"},
+		{"get_project", "***"},
+		{"create_project", "stopped"},
+		{"create_project", "start_project"},
+		{"start_project", "stopped"},
+		{"stop_project", "preserves data"},
+		{"reset_project", "WARNING"},
+		{"reset_project", "slug and display_name"},
+		{"delete_project", "IRREVERSIBLE"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.tool+"_contains_"+tc.phrase, func(t *testing.T) {
+			st := s.GetTool(tc.tool)
+			require.NotNilf(t, st, "tool %q not found", tc.tool)
+			assert.Containsf(t, st.Tool.Description, tc.phrase,
+				"tool %q description should contain %q", tc.tool, tc.phrase)
+		})
+	}
+}
+
+func TestMCPTools_CreateProjectParamDescriptions(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{}}
+	s := buildMCPServer(deps)
+	st := s.GetTool("create_project")
+	require.NotNil(t, st)
+
+	props := st.Tool.InputSchema.Properties
+
+	tests := []struct {
+		param  string
+		phrase string
+	}{
+		{"slug", "3-40"},
+		{"slug", "Immutable"},
+		{"display_name", "100"},
+		{"runtime", "docker-compose"},
+		{"runtime", "kubernetes"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.param+"_contains_"+tc.phrase, func(t *testing.T) {
+			paramMap, ok := props[tc.param].(map[string]any)
+			require.Truef(t, ok, "param %q not found in create_project", tc.param)
+			desc, _ := paramMap["description"].(string)
+			assert.Containsf(t, desc, tc.phrase,
+				"create_project param %q description should contain %q", tc.param, tc.phrase)
+		})
+	}
+}
+
+func TestMCPTools_SlugParamDescription(t *testing.T) {
+	deps := &Deps{ProjectService: &mockSvc{}}
+	s := buildMCPServer(deps)
+
+	slugTools := []string{
+		"get_project",
+		"start_project",
+		"stop_project",
+		"reset_project",
+		"delete_project",
+	}
+
+	for _, name := range slugTools {
+		t.Run(name, func(t *testing.T) {
+			st := s.GetTool(name)
+			require.NotNilf(t, st, "tool %q not found", name)
+			paramMap, ok := st.Tool.InputSchema.Properties["slug"].(map[string]any)
+			require.True(t, ok, "slug param not found")
+			desc, _ := paramMap["description"].(string)
+			assert.Contains(t, desc, "list_projects",
+				"slug description in %q should reference list_projects", name)
+		})
+	}
 }
